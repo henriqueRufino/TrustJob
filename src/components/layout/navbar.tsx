@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/navigation-menu"
 
 const Navbar = () => {
-  const [value, setValue] = React.useState<string | null>(null)
+  const [value, setValue] = React.useState<string | undefined>(undefined)
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const [mobileOpen, setMobileOpen] = React.useState(false)
 
@@ -24,7 +24,7 @@ const Navbar = () => {
 
   const closeMenu = () => {
     timeoutRef.current = setTimeout(() => {
-      setValue(null)
+      setValue(undefined)
     }, 250)
   }
 
