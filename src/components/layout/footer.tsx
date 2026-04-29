@@ -4,7 +4,7 @@ import Link from "next/link"
 
 const Footer = () => {
     return (
-        <footer className="border-t mt-10">
+        <footer className="border-t">
             <div className="max-w-7xl mx-auto px-4 py-8">
 
                 {/* Conteúdo principal */}
@@ -25,7 +25,7 @@ const Footer = () => {
                         <h3 className="text-sm font-semibold mb-2">Navegação</h3>
                         <ul className="space-y-1 text-sm">
                             <li>
-                            <Link href="/page" className="hover:text-primary transition-colors">
+                            <Link href="/" className="hover:text-primary transition-colors">
                                 Home
                             </Link>
                             </li>

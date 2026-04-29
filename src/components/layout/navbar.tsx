@@ -32,7 +32,7 @@ const Navbar = () => {
     <div className="border-b">
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
 
-        <Link href="/page.tsx"><Image src={logo} className="h-[3rem] w-[6rem]" alt="TrustJob" priority /></Link>
+        <Link href="/"><Image src={logo} className="h-[3rem] w-[6rem]" alt="TrustJob" priority /></Link>
 
         {/* Desktop navigation */}
         <div className="hidden md:block">
@@ -46,7 +46,7 @@ const Navbar = () => {
               >
                 <Link
                   href="/servicos"
-                  className="block rounded-md p-3 text-md hover:bg-muted hover:text-chart-5 font-bold transition-colors"
+                  className="block rounded-md p-3 text-base hover:bg-muted hover:text-chart-5 font-bold transition-colors"
                 >
                   Serviços
                 </Link>
@@ -76,7 +76,7 @@ const Navbar = () => {
               >
                 <Link
                   href="/prestadores"
-                  className="block rounded-md p-3 text-md hover:bg-muted hover:text-chart-5 font-bold transition-colors"
+                  className="block rounded-md p-3 text-base hover:bg-muted hover:text-chart-5 font-bold transition-colors"
                 >
                   Prestadores
                 </Link>
@@ -99,7 +99,7 @@ const Navbar = () => {
               <NavigationMenuItem>
                 <Link
                   href="/login"
-                  className="block rounded-md p-3 text-md hover:bg-muted hover:text-chart-5 font-bold transition-colors"
+                  className="block rounded-md p-3 text-base hover:bg-muted hover:text-chart-5 font-bold transition-colors"
                 >
                   Login
                 </Link>

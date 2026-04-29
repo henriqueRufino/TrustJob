@@ -1,15 +1,9 @@
-import Navbar from "@/components/layout/navbar"
-import Footer from "@/components/layout/footer"
-import CatalogoServicos from "@/components/layout/midlle/servico";
+import Home from "@/components/sections/home"
 
 
 const Page = () => {
   return (
-    <>
-      <Navbar />
-      <CatalogoServicos />
-      <Footer />
-    </>
+    <Home />
   )
 }
 
