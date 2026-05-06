@@ -12,6 +12,7 @@ const Navbar = () => {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [logado, setLogado] = React.useState(false)
   const [nomeUsuario, setNomeUsuario] = React.useState<string | null>(null)
+  const [fotoUsuario, setFotoUsuario] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     async function carregarUsuario() {
@@ -21,6 +22,8 @@ const Navbar = () => {
 
       if (!user) {
         setLogado(false)
+        setNomeUsuario(null)
+        setFotoUsuario(null)
         return
       }
 
@@ -28,29 +31,38 @@ const Navbar = () => {
 
       const { data: perfil } = await supabase
         .from("user")
-        .select("nome")
+        .select("nome, foto")
         .eq("auth_user_id", user.id)
         .maybeSingle()
 
-      if (perfil && perfil.nome) {
-        setNomeUsuario(perfil.nome)
-      } else {
-        setNomeUsuario(null)
-      }
+      setNomeUsuario(perfil?.nome ?? null)
+      setFotoUsuario(perfil?.foto ?? null)
     }
 
     carregarUsuario()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      carregarUsuario()
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [supabase])
 
   const perfilOuLogin = logado
     ? {
         href: "/perfil",
-        label: nomeUsuario ? nomeUsuario : "Perfil",
+        label: nomeUsuario || "Perfil",
       }
     : {
         href: "/login",
         label: "Login",
       }
+
+  const avatarSrc = fotoUsuario || "/avatar_padrao.png"
 
   return (
     <div className="border-b bg-background">
@@ -61,24 +73,28 @@ const Navbar = () => {
 
         <nav className="hidden items-center gap-6 md:flex">
           <Link
-            href="/servicos"
+            href="/servicos-categoria"
             className="rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
           >
             Serviços
           </Link>
 
           <Link
-            href="/prestadores"
-            className="rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
-          >
-            Prestadores
-          </Link>
-
-          <Link
             href={perfilOuLogin.href}
-            className="rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
+            className="flex items-center gap-2 rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
           >
-            {perfilOuLogin.label}
+            {logado && (
+              <Image
+                src={avatarSrc}
+                alt="Avatar do usuário"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-full object-cover"
+                unoptimized
+              />
+            )}
+
+            <span>{perfilOuLogin.label}</span>
           </Link>
         </nav>
 
@@ -96,7 +112,7 @@ const Navbar = () => {
         <nav className="border-t bg-background md:hidden">
           <div className="flex flex-col gap-2 p-4">
             <Link
-              href="/servicos"
+              href="/servicos-categoria"
               onClick={() => setMobileOpen(false)}
               className="rounded-md p-3 font-bold hover:bg-muted"
             >
@@ -104,19 +120,22 @@ const Navbar = () => {
             </Link>
 
             <Link
-              href="/prestadores"
-              onClick={() => setMobileOpen(false)}
-              className="rounded-md p-3 font-bold hover:bg-muted"
-            >
-              Prestadores
-            </Link>
-
-            <Link
               href={perfilOuLogin.href}
               onClick={() => setMobileOpen(false)}
-              className="rounded-md p-3 font-bold hover:bg-muted"
+              className="flex items-center gap-3 rounded-md p-3 font-bold hover:bg-muted"
             >
-              {perfilOuLogin.label}
+              {logado && (
+                <Image
+                  src={avatarSrc}
+                  alt="Avatar do usuário"
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 rounded-full object-cover"
+                  unoptimized
+                />
+              )}
+
+              <span>{perfilOuLogin.label}</span>
             </Link>
           </div>
         </nav>

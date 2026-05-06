@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
@@ -17,7 +18,14 @@ export default function PerfilForm() {
   const [nome, setNome] = React.useState("")
   const [email, setEmail] = React.useState("")
   const [telefone, setTelefone] = React.useState("")
+  const [cpf, setCpf] = React.useState("")
   const [dataNascimento, setDataNascimento] = React.useState("")
+
+  const fotoInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  const [fotoFile, setFotoFile] = React.useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = React.useState<string | null>(null)
+  const [fotoNome, setFotoNome] = React.useState("")
 
   const [logradouro, setLogradouro] = React.useState("")
   const [numero, setNumero] = React.useState("")
@@ -47,6 +55,22 @@ export default function PerfilForm() {
     return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
   }
 
+  function formatarCpf(value: string) {
+    const numeros = value.replace(/\D/g, "").slice(0, 11)
+
+    if (numeros.length <= 3) return numeros
+
+    if (numeros.length <= 6) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+    }
+
+    if (numeros.length <= 9) {
+      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+    }
+
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9)}`
+  }
+
   function formatarCep(value: string) {
     const numeros = value.replace(/\D/g, "").slice(0, 8)
 
@@ -73,7 +97,7 @@ export default function PerfilForm() {
 
       const { data: perfil } = await supabase
         .from("user")
-        .select("id, nome, email, telefone, data_nascimento")
+        .select("id, nome, email, telefone, cpf, foto, data_nascimento")
         .eq("auth_user_id", user.id)
         .maybeSingle()
 
@@ -81,6 +105,8 @@ export default function PerfilForm() {
         setUserId(perfil.id)
         setNome(perfil.nome ?? "")
         setTelefone(formatarTelefone(perfil.telefone ?? ""))
+        setCpf(formatarCpf(perfil.cpf ?? ""))
+        setFotoPreview(perfil.foto ?? null)
         setDataNascimento(perfil.data_nascimento ?? "")
 
         const { data: endereco } = await supabase
@@ -112,6 +138,40 @@ export default function PerfilForm() {
     carregarPerfil()
   }, [router, supabase])
 
+  function handleFotoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    setFotoFile(file)
+    setFotoNome(file.name)
+    setFotoPreview(URL.createObjectURL(file))
+  }
+
+  async function uploadFoto(perfilId: number) {
+    if (!fotoFile) return null
+
+    const extensao = fotoFile.name.split(".").pop()
+    const nomeArquivo = `user-${perfilId}-${Date.now()}.${extensao}`
+    const caminhoArquivo = `usuarios/${perfilId}/${nomeArquivo}`
+
+    const { error } = await supabase.storage
+      .from("pictures")
+      .upload(caminhoArquivo, fotoFile, {
+        upsert: true,
+      })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const { data } = supabase.storage
+      .from("pictures")
+      .getPublicUrl(caminhoArquivo)
+
+    return data.publicUrl
+  }
+
   async function handleEstadoChange(value: string) {
     setEstadoId(value)
     setCidadeId("")
@@ -142,26 +202,12 @@ export default function PerfilForm() {
     }
 
     const telefoneLimpo = telefone.replace(/\D/g, "")
+    const cpfLimpo = cpf.replace(/\D/g, "")
     const cepLimpo = cep.replace(/\D/g, "")
 
     let perfilId = userId
 
-    if (perfilId) {
-      const { error } = await supabase
-        .from("user")
-        .update({
-          nome,
-          telefone: telefoneLimpo,
-          data_nascimento: dataNascimento || null,
-        })
-        .eq("id", perfilId)
-
-      if (error) {
-        setErro(error.message)
-        setSalvando(false)
-        return
-      }
-    } else {
+    if (!perfilId) {
       const { data, error } = await supabase
         .from("user")
         .insert({
@@ -169,6 +215,7 @@ export default function PerfilForm() {
           email: user.email ?? email,
           nome,
           telefone: telefoneLimpo,
+          cpf: cpfLimpo,
           data_nascimento: dataNascimento || null,
         })
         .select("id")
@@ -182,6 +229,41 @@ export default function PerfilForm() {
 
       perfilId = data.id
       setUserId(data.id)
+    }
+
+    if (!perfilId) {
+      setErro("Erro ao identificar usuário")
+      setSalvando(false)
+      return
+    }
+
+    let fotoUrl: string | null = null
+
+    try {
+      fotoUrl = await uploadFoto(perfilId)
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Erro ao enviar foto.")
+      setSalvando(false)
+      return
+    }
+
+    const userPayload = {
+      nome,
+      telefone: telefoneLimpo,
+      cpf: cpfLimpo,
+      data_nascimento: dataNascimento || null,
+      ...(fotoUrl ? { foto: fotoUrl } : {}),
+    }
+
+    const { error: userUpdateError } = await supabase
+      .from("user")
+      .update(userPayload)
+      .eq("id", perfilId)
+
+    if (userUpdateError) {
+      setErro(userUpdateError.message)
+      setSalvando(false)
+      return
     }
 
     const enderecoPayload = {
@@ -232,14 +314,27 @@ export default function PerfilForm() {
       }
     }
 
+    if (fotoUrl) {
+      setFotoPreview(fotoUrl)
+      setFotoFile(null)
+      setFotoNome("")
+    }
+
     setMensagem("Perfil salvo com sucesso!")
     setSalvando(false)
+
+    router.push("/perfil")
+    setTimeout(() => {
+      router.refresh()
+    }, 100)
   }
 
   async function sair() {
     await supabase.auth.signOut()
     router.push("/login")
-    router.refresh()
+    setTimeout(() => {
+      router.refresh()
+    }, 100)
   }
 
   if (loading) {
@@ -252,6 +347,42 @@ export default function PerfilForm() {
         <h1 className="mb-4 text-2xl font-bold">Meu perfil</h1>
 
         <form onSubmit={salvarPerfil} className="flex flex-col gap-6">
+          <div className="flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={() => fotoInputRef.current?.click()}
+              className="relative h-28 w-28 overflow-hidden rounded-full border bg-muted transition hover:opacity-80"
+            >
+              {fotoPreview ? (
+                <Image
+                  src={fotoPreview}
+                  alt="Foto do usuário"
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                  Foto
+                </div>
+              )}
+            </button>
+
+            <input
+              ref={fotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFotoChange}
+              className="hidden"
+            />
+
+            {fotoNome && (
+              <p className="max-w-xs truncate text-sm text-muted-foreground">
+                {fotoNome}
+              </p>
+            )}
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <input
               value={nome}
@@ -274,10 +405,17 @@ export default function PerfilForm() {
             />
 
             <input
+              value={cpf}
+              onChange={(e) => setCpf(formatarCpf(e.target.value))}
+              placeholder="CPF"
+              className="h-11 rounded-xl border px-3"
+            />
+
+            <input
               type="date"
               value={dataNascimento}
               onChange={(e) => setDataNascimento(e.target.value)}
-              className="h-11 rounded-xl border px-3"
+              className="h-11 rounded-xl border px-3 md:col-span-2"
             />
           </div>
 

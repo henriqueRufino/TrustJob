@@ -64,7 +64,9 @@ export default function LoginForm() {
       }
 
       router.push("/")
-      router.refresh()
+      setTimeout(() => {
+        router.refresh()
+      }, 100)
       return
     }
 
