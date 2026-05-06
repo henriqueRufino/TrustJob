@@ -171,28 +171,69 @@ export async function cadastrarPrestadorNoServico(
   servicoId: number,
   userId: number,
   valorMedio: number
-) {
-  const supabase = createClient()
+  ) {
+    const supabase = createClient()
 
-  const jaExiste = await verificarPrestadorNoServico(servicoId, userId)
+    const jaExiste = await verificarPrestadorNoServico(servicoId, userId)
 
-  if (jaExiste) {
-    return jaExiste
+    if (jaExiste) {
+      return jaExiste
+    }
+
+    const { data, error } = await supabase
+      .from("servico_prestador")
+      .insert({
+        servico_id: servicoId,
+        user_id: userId,
+        valor_medio: valorMedio,
+      })
+      .select("id")
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data
   }
 
-  const { data, error } = await supabase
-    .from("servico_prestador")
-    .insert({
-      servico_id: servicoId,
-      user_id: userId,
-      valor_medio: valorMedio,
-    })
-    .select("id")
-    .single()
+  export async function atualizarValorMedioPrestadorNoServico(
+    servicoId: number,
+    userId: number,
+    valorMedio: number
+  ) {
+    const supabase = createClient()
 
-  if (error) {
-    throw new Error(error.message)
+    const { data, error } = await supabase
+      .from("servico_prestador")
+      .update({
+        valor_medio: valorMedio,
+      })
+      .eq("servico_id", servicoId)
+      .eq("user_id", userId)
+      .select("id")
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data
   }
 
-  return data
-}
+  export async function excluirPrestadorDoServico(
+    servicoId: number,
+    userId: number
+  ) {
+    const supabase = createClient()
+
+    const { error } = await supabase
+      .from("servico_prestador")
+      .delete()
+      .eq("servico_id", servicoId)
+      .eq("user_id", userId)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+  }

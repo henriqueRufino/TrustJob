@@ -7,7 +7,9 @@ import { Plus } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import type { PrestadorCatalogo } from "@/types/servico-prestador"
 import {
+  atualizarValorMedioPrestadorNoServico,
   cadastrarPrestadorNoServico,
+  excluirPrestadorDoServico,
   getPrestadoresPorServico,
   verificarPrestadorNoServico,
 } from "@/services/servico-prestador-service"
@@ -29,8 +31,12 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
   const [prestadores, setPrestadores] = React.useState<PrestadorCatalogo[]>([])
   const [usuarioLogado, setUsuarioLogado] = React.useState<UsuarioLogado | null>(null)
   const [jaCadastrado, setJaCadastrado] = React.useState(false)
+
   const [mostrarCampoValor, setMostrarCampoValor] = React.useState(false)
   const [valorMedio, setValorMedio] = React.useState("")
+
+  const [prestadorEditandoId, setPrestadorEditandoId] = React.useState<number | null>(null)
+  const [valorMedioEditando, setValorMedioEditando] = React.useState("")
 
   const [loading, setLoading] = React.useState(true)
   const [salvando, setSalvando] = React.useState(false)
@@ -180,6 +186,104 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
     setSalvando(false)
   }
 
+  function iniciarEdicaoValor(prestador: PrestadorCatalogo) {
+    setErro(null)
+    setPrestadorEditandoId(prestador.id)
+    setValorMedioEditando(
+      prestador.valor_medio !== null
+        ? String(prestador.valor_medio).replace(".", ",")
+        : ""
+    )
+  }
+
+  function cancelarEdicaoValor() {
+    setPrestadorEditandoId(null)
+    setValorMedioEditando("")
+    setErro(null)
+  }
+
+  async function handleAtualizarValorMedio() {
+    if (!usuarioLogado) {
+      setErro("Você precisa estar logado para editar o valor do serviço.")
+      return
+    }
+
+    const valorNormalizado = valorMedioEditando.replace(",", ".")
+    const valorConvertido = Number(valorNormalizado)
+
+    if (!valorMedioEditando.trim()) {
+      setErro("Informe o novo valor médio do serviço.")
+      return
+    }
+
+    if (Number.isNaN(valorConvertido) || valorConvertido <= 0) {
+      setErro("Informe um valor médio válido para o serviço.")
+      return
+    }
+
+    setSalvando(true)
+    setErro(null)
+
+    try {
+      await atualizarValorMedioPrestadorNoServico(
+        servicoId,
+        usuarioLogado.id,
+        valorConvertido
+      )
+
+      const prestadoresAtualizados = await getPrestadoresPorServico(servicoId)
+
+      setPrestadores(prestadoresAtualizados)
+      setPrestadorEditandoId(null)
+      setValorMedioEditando("")
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro ao atualizar valor médio do serviço."
+      )
+    }
+
+    setSalvando(false)
+  }
+
+  async function handleExcluirPrestadorDoServico() {
+    if (!usuarioLogado) {
+      setErro("Você precisa estar logado para excluir este serviço.")
+      return
+    }
+
+    const confirmarExclusao = window.confirm(
+      "Tem certeza que deseja remover este serviço do seu catálogo?"
+    )
+
+    if (!confirmarExclusao) {
+      return
+    }
+
+    setSalvando(true)
+    setErro(null)
+
+    try {
+      await excluirPrestadorDoServico(servicoId, usuarioLogado.id)
+
+      const prestadoresAtualizados = await getPrestadoresPorServico(servicoId)
+
+      setPrestadores(prestadoresAtualizados)
+      setJaCadastrado(false)
+      setPrestadorEditandoId(null)
+      setValorMedioEditando("")
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro ao excluir serviço do prestador."
+      )
+    }
+
+    setSalvando(false)
+  }
+
   function renderEstrelas(media: number) {
     const mediaArredondada = Math.round(media)
 
@@ -188,6 +292,17 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
         {index < mediaArredondada ? "★" : "☆"}
       </span>
     ))
+  }
+
+  function formatarValor(valor: number | null) {
+    if (valor === null) {
+      return "Valor não informado"
+    }
+
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(valor)
   }
 
   if (loading) {
@@ -217,9 +332,9 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
           </p>
         )}
 
-        <div className="flex flex-wrap gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {podeMostrarBotaoCadastro && (
-            <div className="flex h-56 w-full max-w-56 flex-col items-center justify-center gap-3 rounded-3xl border-4 border-foreground bg-background p-4 text-center">
+            <div className="flex min-h-72 w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
               {!mostrarCampoValor ? (
                 <button
                   type="button"
@@ -251,7 +366,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
                     value={valorMedio}
                     onChange={(event) => setValorMedio(event.target.value)}
                     placeholder="Ex: 120,00"
-                    className="w-full rounded-xl border border-foreground bg-background px-3 py-2 text-center text-sm outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-background px-3 py-2 text-center text-sm outline-none"
                   />
 
                   <button
@@ -271,7 +386,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
                       setErro(null)
                     }}
                     disabled={salvando}
-                    className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+                    className="text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
                   >
                     Cancelar
                   </button>
@@ -281,58 +396,122 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
           )}
 
           {prestadores.length > 0 ? (
-            prestadoresOrdenados.map((prestador) => (
-              <Link
-                key={prestador.id}
-                href={`/prestadores/${prestador.user_id}`}
-                className="flex h-56 w-full max-w-56 flex-col items-center justify-center gap-3 rounded-3xl border-4 border-foreground bg-background p-4 text-center transition hover:bg-muted"
-              >
-                <div className="relative h-20 w-20 overflow-hidden rounded-2xl border-4 border-foreground bg-muted">
-                  {prestador.foto ? (
-                    <Image
-                      src={prestador.foto}
-                      alt={`Foto de ${prestador.nome}`}
-                      fill
-                      sizes="80px"
-                      className="object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs font-bold">
-                      Foto
-                    </div>
-                  )}
+            prestadoresOrdenados.map((prestador) => {
+              const prestadorEhUsuarioLogado =
+                usuarioLogado?.id === prestador.user_id
+
+              const estaEditando = prestadorEditandoId === prestador.id
+
+              const conteudoCard = (
+                <div className="flex min-h-72 w-full flex-col items-center justify-start gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
+                  <div className="relative h-28 w-28 overflow-hidden rounded-2xl border-2 border-gray-400 bg-muted">
+                    {prestador.foto ? (
+                      <Image
+                        src={prestador.foto}
+                        alt={`Foto de ${prestador.nome}`}
+                        fill
+                        sizes="96px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-muted-foreground">
+                        Foto
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="line-clamp-2 min-h-10 text-sm font-bold leading-normal">
+                    {prestador.nome}
+                  </p>
+
+                  <div className="flex text-foreground">
+                    {renderEstrelas(prestador.media_avaliacoes)}
+                  </div>
+
+                  <div className="flex w-full flex-col items-center gap-1 text-xs font-semibold">
+                    <span>
+                      {prestador.total_avaliacoes} avaliaç
+                      {prestador.total_avaliacoes === 1 ? "ão" : "ões"}
+                    </span>
+
+                    <span>
+                      {prestador.cidade ?? "Cidade não informada"}
+                    </span>
+
+                    {!estaEditando ? (
+                      prestadorEhUsuarioLogado ? (
+                        <button
+                          type="button"
+                          onClick={() => iniciarEdicaoValor(prestador)}
+                          className="font-bold text-foreground underline-offset-4 hover:underline"
+                        >
+                          {prestador.valor_medio !== null
+                            ? formatarValor(prestador.valor_medio)
+                            : "Informar valor"}
+                        </button>
+                      ) : (
+                        <span>{formatarValor(prestador.valor_medio)}</span>
+                      )
+                    ) : (
+                      <div className="mt-1 flex w-full flex-col gap-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={valorMedioEditando}
+                          onChange={(event) =>
+                            setValorMedioEditando(event.target.value)
+                          }
+                          placeholder="Ex: 200,00"
+                          className="w-full rounded-xl border border-gray-300 bg-background px-2 py-1 text-center text-xs outline-none"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={handleAtualizarValorMedio}
+                          disabled={salvando}
+                          className="rounded-xl bg-foreground px-3 py-2 text-xs font-bold text-background transition hover:opacity-90 disabled:opacity-60"
+                        >
+                          {salvando ? "Salvando..." : "Salvar valor"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleExcluirPrestadorDoServico}
+                          disabled={salvando}
+                          className="rounded-xl border border-red-300 px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                        >
+                          Excluir serviço
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={cancelarEdicaoValor}
+                          disabled={salvando}
+                          className="text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+              )
 
-                <p className="line-clamp-1 text-sm font-bold">
-                  {prestador.nome}
-                </p>
+              if (prestadorEhUsuarioLogado) {
+                return <div key={prestador.id}>{conteudoCard}</div>
+              }
 
-                <div className="flex text-foreground">
-                  {renderEstrelas(prestador.media_avaliacoes)}
-                </div>
-
-                <div className="flex flex-col gap-1 text-xs font-semibold">
-                  <span>
-                    {prestador.total_avaliacoes} avaliaç
-                    {prestador.total_avaliacoes === 1 ? "ão" : "ões"}
-                  </span>
-
-                  <span>
-                    {prestador.cidade ?? "Cidade não informada"}
-                  </span>
-
-                  <span>
-                    {prestador.valor_medio !== null
-                      ? new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(prestador.valor_medio)
-                      : "Valor não informado"}
-                  </span>
-                </div>
-              </Link>
-            ))
+              return (
+                <Link
+                  key={prestador.id}
+                  href={`/prestadores/${prestador.user_id}`}
+                  className="block"
+                >
+                  {conteudoCard}
+                </Link>
+              )
+            })
           ) : (
             !podeMostrarBotaoCadastro && (
               <p className="text-sm text-muted-foreground">
