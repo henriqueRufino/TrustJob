@@ -505,7 +505,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
               return (
                 <Link
                   key={prestador.id}
-                  href={`/prestadores/${prestador.user_id}`}
+                  href={`/prestadores/${prestador.user_id}?servicoId=${servicoId}`}
                   className="block"
                 >
                   {conteudoCard}

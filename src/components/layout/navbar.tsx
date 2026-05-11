@@ -6,13 +6,96 @@ import Image from "next/image"
 import logo from "@/assets/navbar/logo_tcc.png"
 import { createClient } from "@/lib/supabase/client"
 
+type ConversaNavbarRow = {
+  id: number
+  cliente_id: number
+  prestador_id: number
+  updated_at: string | null
+  cliente_last_read_at: string | null
+  prestador_last_read_at: string | null
+}
+
+type MensagemNavbarRow = {
+  id: number
+  conversa_id: number
+  remetente_id: number
+  created_at: string
+}
+
 const Navbar = () => {
-  const supabase = createClient()
+  const supabase = React.useMemo(() => createClient(), [])
 
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [logado, setLogado] = React.useState(false)
+  const [userId, setUserId] = React.useState<number | null>(null)
   const [nomeUsuario, setNomeUsuario] = React.useState<string | null>(null)
   const [fotoUsuario, setFotoUsuario] = React.useState<string | null>(null)
+  const [quantidadeNotificacoesConversas, setQuantidadeNotificacoesConversas] =
+    React.useState(0)
+
+  const verificarNotificacoesConversas = React.useCallback(
+    async (perfilId: number) => {
+      const { data: conversas, error: conversasError } = await supabase
+        .from("chat_conversa")
+        .select(
+          "id, cliente_id, prestador_id, updated_at, cliente_last_read_at, prestador_last_read_at"
+        )
+        .or(`cliente_id.eq.${perfilId},prestador_id.eq.${perfilId}`)
+
+      if (conversasError) {
+        setQuantidadeNotificacoesConversas(0)
+        return
+      }
+
+      const conversasTyped = (conversas ?? []) as ConversaNavbarRow[]
+
+      if (conversasTyped.length === 0) {
+        setQuantidadeNotificacoesConversas(0)
+        return
+      }
+
+      const conversaIds = conversasTyped.map((conversa) => conversa.id)
+
+      const { data: mensagens, error: mensagensError } = await supabase
+        .from("chat_mensagem")
+        .select("id, conversa_id, remetente_id, created_at")
+        .in("conversa_id", conversaIds)
+        .neq("remetente_id", perfilId)
+        .order("created_at", { ascending: false })
+
+      if (mensagensError) {
+        setQuantidadeNotificacoesConversas(0)
+        return
+      }
+
+      const mensagensTyped = (mensagens ?? []) as MensagemNavbarRow[]
+
+      const quantidadeMensagensNaoLidas = mensagensTyped.filter((mensagem) => {
+        const conversa = conversasTyped.find(
+          (item) => item.id === mensagem.conversa_id
+        )
+
+        if (!conversa) {
+          return false
+        }
+
+        const usuarioEhCliente = conversa.cliente_id === perfilId
+
+        const ultimaLeitura = usuarioEhCliente
+          ? conversa.cliente_last_read_at
+          : conversa.prestador_last_read_at
+
+        if (!ultimaLeitura) {
+          return true
+        }
+
+        return new Date(mensagem.created_at) > new Date(ultimaLeitura)
+      }).length
+
+      setQuantidadeNotificacoesConversas(quantidadeMensagensNaoLidas)
+    },
+    [supabase]
+  )
 
   React.useEffect(() => {
     async function carregarUsuario() {
@@ -22,8 +105,10 @@ const Navbar = () => {
 
       if (!user) {
         setLogado(false)
+        setUserId(null)
         setNomeUsuario(null)
         setFotoUsuario(null)
+        setQuantidadeNotificacoesConversas(0)
         return
       }
 
@@ -31,12 +116,19 @@ const Navbar = () => {
 
       const { data: perfil } = await supabase
         .from("user")
-        .select("nome, foto")
+        .select("id, nome, foto")
         .eq("auth_user_id", user.id)
         .maybeSingle()
 
+      setUserId(perfil?.id ?? null)
       setNomeUsuario(perfil?.nome ?? null)
       setFotoUsuario(perfil?.foto ?? null)
+
+      if (perfil?.id) {
+        await verificarNotificacoesConversas(perfil.id)
+      } else {
+        setQuantidadeNotificacoesConversas(0)
+      }
     }
 
     carregarUsuario()
@@ -50,7 +142,62 @@ const Navbar = () => {
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [supabase, verificarNotificacoesConversas])
+
+  React.useEffect(() => {
+    if (!userId) {
+      return
+    }
+
+    const channel = supabase
+      .channel(`navbar-chat-notificacoes-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_mensagem",
+        },
+        () => {
+          verificarNotificacoesConversas(userId)
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "chat_conversa",
+        },
+        () => {
+          verificarNotificacoesConversas(userId)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, userId, verificarNotificacoesConversas])
+
+  React.useEffect(() => {
+    if (!userId) {
+      return
+    }
+
+    function atualizarNotificacoes() {
+      verificarNotificacoesConversas(userId as number)
+    }
+
+    window.addEventListener("chat-notificacoes-atualizadas", atualizarNotificacoes)
+
+    return () => {
+      window.removeEventListener(
+        "chat-notificacoes-atualizadas",
+        atualizarNotificacoes
+      )
+    }
+  }, [userId, verificarNotificacoesConversas])
 
   const perfilOuLogin = logado
     ? {
@@ -78,6 +225,21 @@ const Navbar = () => {
           >
             Serviços
           </Link>
+
+          {logado && (
+            <Link
+              href="/conversas"
+              className="relative rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
+            >
+              Conversas
+
+              {quantidadeNotificacoesConversas > 0 && (
+                <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
+                  {quantidadeNotificacoesConversas}
+                </span>
+              )}
+            </Link>
+          )}
 
           <Link
             href={perfilOuLogin.href}
@@ -118,6 +280,22 @@ const Navbar = () => {
             >
               Serviços
             </Link>
+
+            {logado && (
+              <Link
+                href="/conversas"
+                onClick={() => setMobileOpen(false)}
+                className="relative rounded-md p-3 font-bold hover:bg-muted"
+              >
+                Conversas
+
+                {quantidadeNotificacoesConversas > 0 && (
+                  <span className="absolute right-3 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
+                    {quantidadeNotificacoesConversas}
+                  </span>
+                )}
+              </Link>
+            )}
 
             <Link
               href={perfilOuLogin.href}
