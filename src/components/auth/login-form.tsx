@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { Eye, EyeOff } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -12,8 +13,13 @@ export default function LoginForm() {
   const [modo, setModo] = React.useState<"login" | "signup">("login")
   const [email, setEmail] = React.useState("")
   const [senha, setSenha] = React.useState("")
+  const [confirmarSenha, setConfirmarSenha] = React.useState("")
   const [mostrarSenha, setMostrarSenha] = React.useState(false)
-  const [tipoUsuario, setTipoUsuario] = React.useState<"cliente" | "prestador">("cliente")
+  const [mostrarConfirmarSenha, setMostrarConfirmarSenha] =
+    React.useState(false)
+  const [tipoUsuario, setTipoUsuario] = React.useState<"cliente" | "prestador">(
+    "cliente"
+  )
 
   const [loading, setLoading] = React.useState(false)
   const [erro, setErro] = React.useState<string | null>(null)
@@ -46,6 +52,12 @@ export default function LoginForm() {
 
     if (senha.length < 6) {
       setErro("A senha deve ter pelo menos 6 caracteres.")
+      setLoading(false)
+      return
+    }
+
+    if (isSignup && senha !== confirmarSenha) {
+      setErro("As senhas não coincidem. Verifique e tente novamente.")
       setLoading(false)
       return
     }
@@ -92,6 +104,7 @@ export default function LoginForm() {
     setMensagem("Cadastro realizado! Confirme seu e-mail para acessar sua conta.")
     setEmail("")
     setSenha("")
+    setConfirmarSenha("")
     setModo("login")
   }
 
@@ -99,6 +112,8 @@ export default function LoginForm() {
     setErro(null)
     setMensagem(null)
     setMostrarSenha(false)
+    setMostrarConfirmarSenha(false)
+    setConfirmarSenha("")
     setModo((m) => (m === "login" ? "signup" : "login"))
   }
 
@@ -170,6 +185,45 @@ export default function LoginForm() {
 
           {isSignup && (
             <div className="flex flex-col gap-2">
+              <label htmlFor="confirmarSenha" className="text-sm font-medium">
+                Confirmar senha
+              </label>
+
+              <div className="relative">
+                <input
+                  id="confirmarSenha"
+                  type={mostrarConfirmarSenha ? "text" : "password"}
+                  value={confirmarSenha}
+                  onChange={(e) => setConfirmarSenha(e.target.value)}
+                  placeholder="Confirme sua senha"
+                  className="h-11 w-full rounded-xl border border-input bg-background px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setMostrarConfirmarSenha((valor) => !valor)}
+                  aria-label={
+                    mostrarConfirmarSenha
+                      ? "Ocultar confirmação de senha"
+                      : "Mostrar confirmação de senha"
+                  }
+                  className="absolute right-3 top-1/2 flex -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+                >
+                  {mostrarConfirmarSenha ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isSignup && (
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Tipo de conta</label>
 
               <div className="flex gap-3">
@@ -225,6 +279,17 @@ export default function LoginForm() {
                 ? "Registrar-se"
                 : "Entrar"}
           </button>
+
+          {!isSignup && (
+            <div className="text-center">
+              <Link
+                href="/esqueci-senha"
+                className="text-sm font-semibold text-primary transition hover:opacity-80"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
+          )}
         </form>
 
         <div className="text-center text-sm text-muted-foreground">

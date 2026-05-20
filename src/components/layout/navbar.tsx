@@ -22,6 +22,14 @@ type MensagemNavbarRow = {
   created_at: string
 }
 
+type AgendamentoNavbarRow = {
+  id: number
+  cliente_id: number
+  prestador_id: number
+  servico_etapa_id: number | null
+  updated_at: string | null
+}
+
 const Navbar = () => {
   const supabase = React.useMemo(() => createClient(), [])
 
@@ -30,8 +38,14 @@ const Navbar = () => {
   const [userId, setUserId] = React.useState<number | null>(null)
   const [nomeUsuario, setNomeUsuario] = React.useState<string | null>(null)
   const [fotoUsuario, setFotoUsuario] = React.useState<string | null>(null)
+
   const [quantidadeNotificacoesConversas, setQuantidadeNotificacoesConversas] =
     React.useState(0)
+
+  const [
+    quantidadeNotificacoesAgendamentos,
+    setQuantidadeNotificacoesAgendamentos,
+  ] = React.useState(0)
 
   const verificarNotificacoesConversas = React.useCallback(
     async (perfilId: number) => {
@@ -97,6 +111,48 @@ const Navbar = () => {
     [supabase]
   )
 
+  const verificarNotificacoesAgendamentos = React.useCallback(
+    async (perfilId: number) => {
+      const { data, error } = await supabase
+        .from("servico_solicitado")
+        .select("id, cliente_id, prestador_id, servico_etapa_id, updated_at")
+        .or(`cliente_id.eq.${perfilId},prestador_id.eq.${perfilId}`)
+        .gte("servico_etapa_id", 2)
+
+      if (error) {
+        setQuantidadeNotificacoesAgendamentos(0)
+        return
+      }
+
+      const agendamentos = (data ?? []) as AgendamentoNavbarRow[]
+
+      if (agendamentos.length === 0) {
+        setQuantidadeNotificacoesAgendamentos(0)
+        return
+      }
+
+      const ultimaLeitura = localStorage.getItem(
+        `agendamentos:last-read:${perfilId}`
+      )
+
+      if (!ultimaLeitura) {
+        setQuantidadeNotificacoesAgendamentos(agendamentos.length)
+        return
+      }
+
+      const quantidadeNaoVistos = agendamentos.filter((agendamento) => {
+        if (!agendamento.updated_at) {
+          return false
+        }
+
+        return new Date(agendamento.updated_at) > new Date(ultimaLeitura)
+      }).length
+
+      setQuantidadeNotificacoesAgendamentos(quantidadeNaoVistos)
+    },
+    [supabase]
+  )
+
   React.useEffect(() => {
     async function carregarUsuario() {
       const {
@@ -109,6 +165,7 @@ const Navbar = () => {
         setNomeUsuario(null)
         setFotoUsuario(null)
         setQuantidadeNotificacoesConversas(0)
+        setQuantidadeNotificacoesAgendamentos(0)
         return
       }
 
@@ -126,8 +183,10 @@ const Navbar = () => {
 
       if (perfil?.id) {
         await verificarNotificacoesConversas(perfil.id)
+        await verificarNotificacoesAgendamentos(perfil.id)
       } else {
         setQuantidadeNotificacoesConversas(0)
+        setQuantidadeNotificacoesAgendamentos(0)
       }
     }
 
@@ -142,7 +201,11 @@ const Navbar = () => {
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase, verificarNotificacoesConversas])
+  }, [
+    supabase,
+    verificarNotificacoesConversas,
+    verificarNotificacoesAgendamentos,
+  ])
 
   React.useEffect(() => {
     if (!userId) {
@@ -185,19 +248,73 @@ const Navbar = () => {
       return
     }
 
-    function atualizarNotificacoes() {
-      verificarNotificacoesConversas(userId as number)
+    const channel = supabase
+      .channel(`navbar-agendamentos-notificacoes-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "servico_solicitado",
+        },
+        () => {
+          verificarNotificacoesAgendamentos(userId)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [supabase, userId, verificarNotificacoesAgendamentos])
+
+  React.useEffect(() => {
+    if (!userId) {
+      return
     }
 
-    window.addEventListener("chat-notificacoes-atualizadas", atualizarNotificacoes)
+    const usuarioIdAtual = userId
+
+    function atualizarNotificacoesConversas() {
+      verificarNotificacoesConversas(usuarioIdAtual)
+    }
+
+    window.addEventListener(
+      "chat-notificacoes-atualizadas",
+      atualizarNotificacoesConversas
+    )
 
     return () => {
       window.removeEventListener(
         "chat-notificacoes-atualizadas",
-        atualizarNotificacoes
+        atualizarNotificacoesConversas
       )
     }
   }, [userId, verificarNotificacoesConversas])
+
+  React.useEffect(() => {
+    if (!userId) {
+      return
+    }
+
+    const usuarioIdAtual = userId
+
+    function atualizarNotificacoesAgendamentos() {
+      verificarNotificacoesAgendamentos(usuarioIdAtual)
+    }
+
+    window.addEventListener(
+      "agendamentos-notificacoes-atualizadas",
+      atualizarNotificacoesAgendamentos
+    )
+
+    return () => {
+      window.removeEventListener(
+        "agendamentos-notificacoes-atualizadas",
+        atualizarNotificacoesAgendamentos
+      )
+    }
+  }, [userId, verificarNotificacoesAgendamentos])
 
   const perfilOuLogin = logado
     ? {
@@ -236,6 +353,21 @@ const Navbar = () => {
               {quantidadeNotificacoesConversas > 0 && (
                 <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
                   {quantidadeNotificacoesConversas}
+                </span>
+              )}
+            </Link>
+          )}
+
+          {logado && (
+            <Link
+              href="/agendamentos"
+              className="relative rounded-md p-3 text-base font-bold transition-colors hover:bg-muted hover:text-chart-5"
+            >
+              Agendamentos
+
+              {quantidadeNotificacoesAgendamentos > 0 && (
+                <span className="absolute right-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
+                  {quantidadeNotificacoesAgendamentos}
                 </span>
               )}
             </Link>
@@ -292,6 +424,22 @@ const Navbar = () => {
                 {quantidadeNotificacoesConversas > 0 && (
                   <span className="absolute right-3 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
                     {quantidadeNotificacoesConversas}
+                  </span>
+                )}
+              </Link>
+            )}
+
+            {logado && (
+              <Link
+                href="/agendamentos"
+                onClick={() => setMobileOpen(false)}
+                className="relative rounded-md p-3 font-bold hover:bg-muted"
+              >
+                Agendamentos
+
+                {quantidadeNotificacoesAgendamentos > 0 && (
+                  <span className="absolute right-3 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold leading-none text-white">
+                    {quantidadeNotificacoesAgendamentos}
                   </span>
                 )}
               </Link>

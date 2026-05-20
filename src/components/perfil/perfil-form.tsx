@@ -9,9 +9,20 @@ import type { Estado } from "@/types/estado"
 import type { Cidade } from "@/types/cidade"
 import { getEstados, getCidadesPorEstado } from "@/services/localizacao-service"
 
+type ViaCepResponse = {
+  cep: string
+  logradouro: string
+  complemento: string
+  bairro: string
+  localidade: string
+  uf: string
+  estado?: string
+  erro?: boolean
+}
+
 export default function PerfilForm() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = React.useMemo(() => createClient(), [])
 
   const [userId, setUserId] = React.useState<number | null>(null)
 
@@ -22,6 +33,7 @@ export default function PerfilForm() {
   const [dataNascimento, setDataNascimento] = React.useState("")
 
   const fotoInputRef = React.useRef<HTMLInputElement | null>(null)
+  const ultimoCepBuscadoRef = React.useRef<string | null>(null)
 
   const [fotoFile, setFotoFile] = React.useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = React.useState<string | null>(null)
@@ -38,46 +50,61 @@ export default function PerfilForm() {
   const [estadoId, setEstadoId] = React.useState("")
   const [cidadeId, setCidadeId] = React.useState("")
 
+  const [buscandoCep, setBuscandoCep] = React.useState(false)
+  const [erroCep, setErroCep] = React.useState<string | null>(null)
+
   const [loading, setLoading] = React.useState(true)
   const [salvando, setSalvando] = React.useState(false)
   const [mensagem, setMensagem] = React.useState<string | null>(null)
   const [erro, setErro] = React.useState<string | null>(null)
 
-  function formatarTelefone(value: string) {
-    const numeros = value.replace(/\D/g, "").slice(0, 11)
-
-    if (numeros.length <= 2) return numeros
-
-    if (numeros.length <= 7) {
-      return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
-    }
-
-    return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
+  function limparNumeros(value: string) {
+    return value.replace(/\D/g, "")
   }
 
-  function formatarCpf(value: string) {
-    const numeros = value.replace(/\D/g, "").slice(0, 11)
-
-    if (numeros.length <= 3) return numeros
-
-    if (numeros.length <= 6) {
-      return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
-    }
-
-    if (numeros.length <= 9) {
-      return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
-    }
-
-    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9)}`
+  function normalizarTexto(value: string) {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim()
   }
 
-  function formatarCep(value: string) {
-    const numeros = value.replace(/\D/g, "").slice(0, 8)
+const formatarTelefone = React.useCallback((value: string) => {
+  const numeros = limparNumeros(value).slice(0, 11)
 
-    if (numeros.length <= 5) return numeros
+  if (numeros.length <= 2) return numeros
 
-    return `${numeros.slice(0, 5)}-${numeros.slice(5)}`
+  if (numeros.length <= 7) {
+    return `(${numeros.slice(0, 2)}) ${numeros.slice(2)}`
   }
+
+  return `(${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`
+}, [])
+
+const formatarCpf = React.useCallback((value: string) => {
+  const numeros = limparNumeros(value).slice(0, 11)
+
+  if (numeros.length <= 3) return numeros
+
+  if (numeros.length <= 6) {
+    return `${numeros.slice(0, 3)}.${numeros.slice(3)}`
+  }
+
+  if (numeros.length <= 9) {
+    return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6)}`
+  }
+
+  return `${numeros.slice(0, 3)}.${numeros.slice(3, 6)}.${numeros.slice(6, 9)}-${numeros.slice(9)}`
+}, [])
+
+const formatarCep = React.useCallback((value: string) => {
+  const numeros = limparNumeros(value).slice(0, 8)
+
+  if (numeros.length <= 5) return numeros
+
+  return `${numeros.slice(0, 5)}-${numeros.slice(5)}`
+}, [])
 
   React.useEffect(() => {
     async function carregarPerfil() {
@@ -111,7 +138,9 @@ export default function PerfilForm() {
 
         const { data: endereco } = await supabase
           .from("user_address")
-          .select("id, logradouro, numero, complemento, bairro, cep, estado_id, cidade_id")
+          .select(
+            "id, logradouro, numero, complemento, bairro, cep, estado_id, cidade_id"
+          )
           .eq("user_id", perfil.id)
           .maybeSingle()
 
@@ -136,7 +165,106 @@ export default function PerfilForm() {
     }
 
     carregarPerfil()
-  }, [router, supabase])
+  }, [router, supabase, formatarTelefone, formatarCpf, formatarCep])
+
+  async function buscarEnderecoPorCep(cepInformado: string) {
+    const cepLimpo = limparNumeros(cepInformado)
+
+    if (cepLimpo.length !== 8) {
+      setErroCep("Digite um CEP válido com 8 números.")
+      return
+    }
+
+    if (ultimoCepBuscadoRef.current === cepLimpo) {
+      return
+    }
+
+    ultimoCepBuscadoRef.current = cepLimpo
+    setBuscandoCep(true)
+    setErroCep(null)
+
+    try {
+      const resposta = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`)
+
+      if (!resposta.ok) {
+        throw new Error("Não foi possível consultar o CEP.")
+      }
+
+      const endereco = (await resposta.json()) as ViaCepResponse
+
+      if (endereco.erro) {
+        setErroCep("CEP não encontrado.")
+        setBuscandoCep(false)
+        return
+      }
+
+      setCep(formatarCep(endereco.cep || cepLimpo))
+      setLogradouro(endereco.logradouro ?? "")
+      setBairro(endereco.bairro ?? "")
+
+      if (endereco.complemento) {
+        setComplemento(endereco.complemento)
+      }
+
+      const estadoEncontrado = estados.find(
+        (estado) => estado.uf?.toUpperCase() === endereco.uf.toUpperCase()
+      )
+
+      if (!estadoEncontrado) {
+        setEstadoId("")
+        setCidadeId("")
+        setCidades([])
+        setErroCep(`Estado ${endereco.uf} não encontrado no banco.`)
+        setBuscandoCep(false)
+        return
+      }
+
+      setEstadoId(String(estadoEncontrado.id))
+
+      const cidadesData = await getCidadesPorEstado(Number(estadoEncontrado.id))
+      setCidades(cidadesData)
+
+      const cidadeEncontrada = cidadesData.find(
+        (cidade) =>
+          normalizarTexto(cidade.nome ?? "") ===
+          normalizarTexto(endereco.localidade)
+      )
+
+      if (!cidadeEncontrada) {
+        setCidadeId("")
+        setErroCep(
+          `Cidade "${endereco.localidade}" não encontrada no banco para ${endereco.uf}.`
+        )
+        setBuscandoCep(false)
+        return
+      }
+
+      setCidadeId(String(cidadeEncontrada.id))
+    } catch (error) {
+      ultimoCepBuscadoRef.current = null
+      setErroCep(
+        error instanceof Error ? error.message : "Erro ao consultar o CEP."
+      )
+    }
+
+    setBuscandoCep(false)
+  }
+
+  function handleCepChange(value: string) {
+    const cepFormatado = formatarCep(value)
+    const cepLimpo = limparNumeros(cepFormatado)
+
+    setCep(cepFormatado)
+    setErroCep(null)
+
+    if (cepLimpo.length < 8) {
+      ultimoCepBuscadoRef.current = null
+    }
+
+    if (cepLimpo.length === 8) {
+      buscarEnderecoPorCep(cepFormatado)
+    }
+  }
 
   function handleFotoChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -175,6 +303,8 @@ export default function PerfilForm() {
   async function handleEstadoChange(value: string) {
     setEstadoId(value)
     setCidadeId("")
+    setErroCep(null)
+    ultimoCepBuscadoRef.current = null
 
     if (!value) {
       setCidades([])
@@ -420,6 +550,29 @@ export default function PerfilForm() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-1 md:col-span-2">
+              <input
+                value={cep}
+                onChange={(e) => handleCepChange(e.target.value)}
+                onBlur={() => {
+                  if (limparNumeros(cep).length === 8) {
+                    buscarEnderecoPorCep(cep)
+                  }
+                }}
+                placeholder="CEP"
+                maxLength={9}
+                className="h-11 rounded-xl border px-3"
+              />
+
+              {buscandoCep && (
+                <p className="text-xs text-muted-foreground">
+                  Buscando endereço pelo CEP...
+                </p>
+              )}
+
+              {erroCep && <p className="text-xs text-red-500">{erroCep}</p>}
+            </div>
+
             <input
               value={logradouro}
               onChange={(e) => setLogradouro(e.target.value)}
@@ -463,7 +616,10 @@ export default function PerfilForm() {
 
             <select
               value={cidadeId}
-              onChange={(e) => setCidadeId(e.target.value)}
+              onChange={(e) => {
+                setCidadeId(e.target.value)
+                setErroCep(null)
+              }}
               disabled={!estadoId}
               className="h-11 rounded-xl border px-3 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -474,13 +630,6 @@ export default function PerfilForm() {
                 </option>
               ))}
             </select>
-
-            <input
-              value={cep}
-              onChange={(e) => setCep(formatarCep(e.target.value))}
-              placeholder="CEP"
-              className="h-11 rounded-xl border px-3 md:col-span-2"
-            />
           </div>
 
           {erro && <p className="text-sm text-red-500">{erro}</p>}
