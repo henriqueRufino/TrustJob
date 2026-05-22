@@ -460,7 +460,7 @@ const formatarCep = React.useCallback((value: string) => {
   }
 
   async function sair() {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: "local" })
     router.push("/login")
     setTimeout(() => {
       router.refresh()

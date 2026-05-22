@@ -29,13 +29,16 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
 
   const [nomeServico, setNomeServico] = React.useState("")
   const [prestadores, setPrestadores] = React.useState<PrestadorCatalogo[]>([])
-  const [usuarioLogado, setUsuarioLogado] = React.useState<UsuarioLogado | null>(null)
+  const [usuarioLogado, setUsuarioLogado] =
+    React.useState<UsuarioLogado | null>(null)
   const [jaCadastrado, setJaCadastrado] = React.useState(false)
 
   const [mostrarCampoValor, setMostrarCampoValor] = React.useState(false)
   const [valorMedio, setValorMedio] = React.useState("")
 
-  const [prestadorEditandoId, setPrestadorEditandoId] = React.useState<number | null>(null)
+  const [prestadorEditandoId, setPrestadorEditandoId] = React.useState<
+    number | null
+  >(null)
   const [valorMedioEditando, setValorMedioEditando] = React.useState("")
 
   const [loading, setLoading] = React.useState(true)
@@ -80,7 +83,9 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
         const prestadoresData = await getPrestadoresPorServico(servicoId)
         setPrestadores(prestadoresData)
       } catch (error) {
-        setErro(error instanceof Error ? error.message : "Erro ao buscar prestadores.")
+        setErro(
+          error instanceof Error ? error.message : "Erro ao buscar prestadores."
+        )
         setLoading(false)
         return
       }
@@ -305,6 +310,44 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
     }).format(valor)
   }
 
+  function renderFotoPrestador(
+    prestador: PrestadorCatalogo,
+    prestadorEhUsuarioLogado: boolean
+  ) {
+    const foto = (
+      <div className="relative h-28 w-28 overflow-hidden rounded-2xl border-2 border-gray-400 bg-muted">
+        {prestador.foto ? (
+          <Image
+            src={prestador.foto}
+            alt={`Foto de ${prestador.nome}`}
+            fill
+            sizes="112px"
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-muted-foreground">
+            Foto
+          </div>
+        )}
+      </div>
+    )
+
+    if (!prestadorEhUsuarioLogado) {
+      return foto
+    }
+
+    return (
+      <Link
+        href={`/prestadores/${prestador.user_id}?servicoId=${servicoId}`}
+        className="transition hover:opacity-80"
+        title="Ver meu perfil de prestador"
+      >
+        {foto}
+      </Link>
+    )
+  }
+
   if (loading) {
     return (
       <section className="flex justify-center px-4 py-10 md:px-8">
@@ -404,22 +447,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
 
               const conteudoCard = (
                 <div className="flex min-h-72 w-full flex-col items-center justify-start gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
-                  <div className="relative h-28 w-28 overflow-hidden rounded-2xl border-2 border-gray-400 bg-muted">
-                    {prestador.foto ? (
-                      <Image
-                        src={prestador.foto}
-                        alt={`Foto de ${prestador.nome}`}
-                        fill
-                        sizes="96px"
-                        className="object-cover"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-muted-foreground">
-                        Foto
-                      </div>
-                    )}
-                  </div>
+                  {renderFotoPrestador(prestador, prestadorEhUsuarioLogado)}
 
                   <p className="line-clamp-2 min-h-10 text-sm font-bold leading-normal">
                     {prestador.nome}
@@ -435,9 +463,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
                       {prestador.total_avaliacoes === 1 ? "ão" : "ões"}
                     </span>
 
-                    <span>
-                      {prestador.cidade ?? "Cidade não informada"}
-                    </span>
+                    <span>{prestador.cidade ?? "Cidade não informada"}</span>
 
                     {!estaEditando ? (
                       prestadorEhUsuarioLogado ? (

@@ -10,32 +10,33 @@ import {
   type ChatConversaLista,
 } from "@/services/chat-service"
 
+type AbaConversas = "abertas" | "finalizadas"
+
 export default function ChatLista() {
   const supabase = React.useMemo(() => createClient(), [])
 
+  const [abaAtiva, setAbaAtiva] = React.useState<AbaConversas>("abertas")
   const [conversas, setConversas] = React.useState<ChatConversaLista[]>([])
   const [loading, setLoading] = React.useState(true)
   const [erro, setErro] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    async function carregarConversas() {
-      setLoading(true)
-      setErro(null)
+  const carregarConversas = React.useCallback(async () => {
+    setLoading(true)
+    setErro(null)
 
-      try {
-        const conversasData = await getConversasDoUsuarioLogado()
-        setConversas(conversasData)
-      } catch (error) {
-        setErro(
-          error instanceof Error
-            ? error.message
-            : "Erro ao carregar conversas."
-        )
-      }
-
-      setLoading(false)
+    try {
+      const conversasData = await getConversasDoUsuarioLogado()
+      setConversas(conversasData)
+    } catch (error) {
+      setErro(
+        error instanceof Error ? error.message : "Erro ao carregar conversas."
+      )
     }
 
+    setLoading(false)
+  }, [])
+
+  React.useEffect(() => {
     carregarConversas()
 
     const channel = supabase
@@ -62,12 +63,23 @@ export default function ChatLista() {
           carregarConversas()
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "servico_solicitado",
+        },
+        () => {
+          carregarConversas()
+        }
+      )
       .subscribe()
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [supabase])
+  }, [carregarConversas, supabase])
 
   function formatarHorario(data: string | null) {
     if (!data) {
@@ -81,6 +93,17 @@ export default function ChatLista() {
       minute: "2-digit",
     }).format(new Date(data))
   }
+
+  const conversasAbertas = conversas.filter(
+    (conversa) => conversa.servico_solicitado_etapa_id !== 9
+  )
+
+  const conversasFinalizadas = conversas.filter(
+    (conversa) => conversa.servico_solicitado_etapa_id === 9
+  )
+
+  const conversasExibidas =
+    abaAtiva === "abertas" ? conversasAbertas : conversasFinalizadas
 
   if (loading) {
     return (
@@ -97,8 +120,35 @@ export default function ChatLista() {
           <h1 className="text-2xl font-bold md:text-3xl">Conversas</h1>
 
           <p className="text-sm text-muted-foreground md:text-base">
-            Acompanhe suas conversas abertas com clientes ou prestadores.
+            Acompanhe suas conversas abertas e o histórico de conversas
+            finalizadas.
           </p>
+        </div>
+
+        <div className="mx-auto flex w-full max-w-md rounded-2xl border border-gray-300 bg-background p-1">
+          <button
+            type="button"
+            onClick={() => setAbaAtiva("abertas")}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold transition ${
+              abaAtiva === "abertas"
+                ? "bg-blue-950 text-white"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            Em aberto ({conversasAbertas.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAbaAtiva("finalizadas")}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold transition ${
+              abaAtiva === "finalizadas"
+                ? "bg-blue-950 text-white"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            Finalizadas ({conversasFinalizadas.length})
+          </button>
         </div>
 
         {erro && (
@@ -107,9 +157,9 @@ export default function ChatLista() {
           </p>
         )}
 
-        {conversas.length > 0 ? (
+        {conversasExibidas.length > 0 ? (
           <div className="flex flex-col overflow-hidden rounded-3xl border border-gray-300 bg-background shadow-sm">
-            {conversas.map((conversa, index) => (
+            {conversasExibidas.map((conversa, index) => (
               <Link
                 key={conversa.id}
                 href={`/conversas/${conversa.id}`}
@@ -118,7 +168,7 @@ export default function ChatLista() {
                     ? "bg-blue-50"
                     : ""
                 } ${
-                  index !== conversas.length - 1
+                  index !== conversasExibidas.length - 1
                     ? "border-b border-gray-200"
                     : ""
                 }`}
@@ -155,6 +205,12 @@ export default function ChatLista() {
                             {conversa.quantidade_mensagens_nao_lidas}
                           </span>
                         )}
+
+                        {conversa.servico_solicitado_etapa_id === 9 && (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                            Finalizada
+                          </span>
+                        )}
                       </div>
 
                       <p className="truncate text-xs font-semibold text-muted-foreground">
@@ -188,10 +244,16 @@ export default function ChatLista() {
           <div className="flex flex-col items-center gap-3 rounded-3xl border border-gray-300 p-8 text-center">
             <MessageCircle className="h-10 w-10 text-muted-foreground" />
 
-            <p className="font-semibold">Nenhuma conversa aberta ainda.</p>
+            <p className="font-semibold">
+              {abaAtiva === "abertas"
+                ? "Nenhuma conversa em aberto."
+                : "Nenhuma conversa finalizada."}
+            </p>
 
             <p className="max-w-md text-sm text-muted-foreground">
-              Quando uma conversa for iniciada, ela aparecerá aqui.
+              {abaAtiva === "abertas"
+                ? "Quando uma conversa for iniciada, ela aparecerá aqui."
+                : "Quando um serviço for finalizado, a conversa aparecerá neste histórico."}
             </p>
           </div>
         )}

@@ -16,6 +16,9 @@ export type PrestadorDetalheData = {
 export type AvaliacaoPrestadorData = {
   id: number
   nota: number | null
+  titulo: string | null
+  comentario: string | null
+  midia: string | null
   created_at: string | null
   servico_id: number | null
   servico_nome: string | null
@@ -65,6 +68,9 @@ type PrestadorRow = {
 type AvaliacaoRow = {
   id: number
   nota: number | null
+  titulo: string | null
+  comentario: string | null
+  midia: string | null
   created_at: string | null
   servico_id: number | null
   servico_solicitado_id: number | null
@@ -161,6 +167,9 @@ export async function getAvaliacoesPorPrestador(
     .select(`
       id,
       nota,
+      titulo,
+      comentario,
+      midia,
       created_at,
       servico_id,
       servico_solicitado_id,
@@ -173,6 +182,7 @@ export async function getAvaliacoesPorPrestador(
       )
     `)
     .eq("servico_solicitado.prestador_id", prestadorId)
+    .order("created_at", { ascending: false })
 
   if (error) {
     throw new Error(error.message)
@@ -192,6 +202,9 @@ export async function getAvaliacoesPorPrestador(
     return {
       id: avaliacao.id,
       nota: avaliacao.nota,
+      titulo: avaliacao.titulo,
+      comentario: avaliacao.comentario,
+      midia: avaliacao.midia,
       created_at: avaliacao.created_at,
       servico_id: avaliacao.servico_id,
       servico_nome: servico?.nome ?? null,

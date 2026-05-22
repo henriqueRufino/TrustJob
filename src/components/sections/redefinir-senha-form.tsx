@@ -130,7 +130,7 @@ export default function RedefinirSenhaForm({
 
     setMensagem("Senha redefinida com sucesso. Você será redirecionado para o login.")
 
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: "local" })
 
     setTimeout(() => {
       router.push("/login")

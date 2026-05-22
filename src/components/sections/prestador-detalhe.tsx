@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowUpDown } from "lucide-react"
+import { ArrowUpDown, ChevronDown, ChevronUp, Play } from "lucide-react"
 import {
   getAvaliacoesPorPrestador,
   getPrestadorDetalhe,
@@ -18,7 +18,16 @@ type PrestadorDetalheProps = {
 
 type TipoOrdenacao = "cronologica" | "nota" | "servico"
 
-export default function PrestadorDetalhe({ prestadorId, servicoId = null }: PrestadorDetalheProps) {
+type MidiaAvaliacao = {
+  url: string
+  tipo: string
+  nome: string
+}
+
+export default function PrestadorDetalhe({
+  prestadorId,
+  servicoId = null,
+}: PrestadorDetalheProps) {
   const [prestador, setPrestador] = React.useState<PrestadorDetalheData | null>(
     null
   )
@@ -27,8 +36,13 @@ export default function PrestadorDetalhe({ prestadorId, servicoId = null }: Pres
     []
   )
 
-  const [ordenacao, setOrdenacao] = React.useState<TipoOrdenacao>("cronologica")
+  const [ordenacao, setOrdenacao] =
+    React.useState<TipoOrdenacao>("cronologica")
   const [ordemAscendente, setOrdemAscendente] = React.useState(false)
+
+  const [avaliacoesAbertas, setAvaliacoesAbertas] = React.useState<number[]>(
+    []
+  )
 
   const [loading, setLoading] = React.useState(true)
   const [erro, setErro] = React.useState<string | null>(null)
@@ -108,11 +122,14 @@ export default function PrestadorDetalhe({ prestadorId, servicoId = null }: Pres
     return lista
   }, [avaliacoes, ordenacao, ordemAscendente])
 
-  function renderEstrelas(media: number) {
+  function renderEstrelas(media: number, tamanho: "sm" | "md" = "md") {
     const mediaArredondada = Math.round(media)
 
     return Array.from({ length: 5 }).map((_, index) => (
-      <span key={index} className="text-2xl leading-none">
+      <span
+        key={index}
+        className={`${tamanho === "sm" ? "text-lg" : "text-2xl"} leading-none`}
+      >
         {index < mediaArredondada ? "★" : "☆"}
       </span>
     ))
@@ -158,6 +175,60 @@ export default function PrestadorDetalhe({ prestadorId, servicoId = null }: Pres
     }
 
     return ordemAscendente ? "serviço A-Z" : "serviço Z-A"
+  }
+
+  function parseMidias(midia: string | null | undefined): MidiaAvaliacao[] {
+    if (!midia) {
+      return []
+    }
+
+    try {
+      const parsed = JSON.parse(midia)
+
+      if (!Array.isArray(parsed)) {
+        return []
+      }
+
+      return parsed.filter((item) => {
+        return (
+          item &&
+          typeof item.url === "string" &&
+          typeof item.tipo === "string" &&
+          typeof item.nome === "string"
+        )
+      })
+    } catch {
+      return []
+    }
+  }
+
+  function midiaEhVideo(tipo: string) {
+    return tipo.startsWith("video/")
+  }
+
+  function midiaEhImagem(tipo: string) {
+    return tipo.startsWith("image/")
+  }
+
+  function avaliacaoEstaAberta(avaliacaoId: number) {
+    return avaliacoesAbertas.includes(avaliacaoId)
+  }
+
+  function alternarAvaliacao(avaliacaoId: number) {
+    setAvaliacoesAbertas((idsAtuais) => {
+      if (idsAtuais.includes(avaliacaoId)) {
+        return idsAtuais.filter((id) => id !== avaliacaoId)
+      }
+
+      return [...idsAtuais, avaliacaoId]
+    })
+  }
+
+  function avaliacaoPodeExpandir(avaliacao: AvaliacaoPrestadorData) {
+    const possuiComentario = !!avaliacao.comentario?.trim()
+    const possuiMidia = parseMidias(avaliacao.midia).length > 0
+
+    return possuiComentario || possuiMidia
   }
 
   if (loading) {
@@ -255,7 +326,7 @@ export default function PrestadorDetalhe({ prestadorId, servicoId = null }: Pres
 
         <div className="rounded-3xl border border-gray-300 bg-background p-6 shadow-sm">
           <div className="flex flex-col items-center gap-2 text-center">
-            <h2 className="text-xl font-bold">Avaliações do prestador</h2>
+            <h2 className="text-xl font-bold">Avaliações geral do prestador</h2>
 
             <div className="flex text-foreground">
               {renderEstrelas(mediaAvaliacoes)}
@@ -309,35 +380,149 @@ export default function PrestadorDetalhe({ prestadorId, servicoId = null }: Pres
           </div>
 
           {avaliacoesOrdenadas.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {avaliacoesOrdenadas.map((avaliacao) => (
-                <div
-                  key={avaliacao.id}
-                  className="rounded-2xl border border-gray-200 p-4"
-                >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="font-bold">
-                        {avaliacao.servico_nome ?? "Serviço não informado"}
-                      </p>
+            <div className="flex flex-col gap-4">
+              {avaliacoesOrdenadas.map((avaliacao) => {
+                const midias = parseMidias(avaliacao.midia)
+                const aberta = avaliacaoEstaAberta(avaliacao.id)
+                const podeExpandir = avaliacaoPodeExpandir(avaliacao)
 
-                      <p className="text-sm text-muted-foreground">
-                        {formatarData(avaliacao.created_at)}
-                      </p>
-                    </div>
+                return (
+                  <div
+                    key={avaliacao.id}
+                    className="rounded-2xl border border-gray-200 p-4"
+                  >
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-lg font-bold">
+                            {avaliacao.titulo || "Avaliação sem título"}
+                          </p>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex text-lg">
-                        {renderEstrelas(Number(avaliacao.nota ?? 0))}
+                          <p className="text-sm font-semibold text-muted-foreground">
+                            Serviço:{" "}
+                            <span className="text-foreground">
+                              {avaliacao.servico_nome ??
+                                "Serviço não informado"}
+                            </span>
+                          </p>
+
+                          <p className="text-sm text-muted-foreground">
+                            Data: {formatarData(avaliacao.created_at)}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className="flex text-lg">
+                              {renderEstrelas(
+                                Number(avaliacao.nota ?? 0),
+                                "sm"
+                              )}
+                            </div>
+
+                            <span className="text-sm font-bold">
+                              {avaliacao.nota ?? 0}/5
+                            </span>
+                          </div>
+
+                          {podeExpandir && (
+                            <button
+                              type="button"
+                              onClick={() => alternarAvaliacao(avaliacao.id)}
+                              className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 transition hover:bg-muted"
+                              aria-label={
+                                aberta
+                                  ? "Minimizar avaliação"
+                                  : "Expandir avaliação"
+                              }
+                            >
+                              {aberta ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      <span className="text-sm font-bold">
-                        {avaliacao.nota ?? 0}/5
-                      </span>
+                      {aberta && podeExpandir && (
+                        <div className="flex flex-col gap-4">
+                          {avaliacao.comentario ? (
+                            <div className="rounded-2xl bg-muted/40 p-4">
+                              <p className="text-sm font-bold">Comentário</p>
+
+                              <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">
+                                {avaliacao.comentario}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Nenhum comentário informado.
+                            </p>
+                          )}
+
+                          {midias.length > 0 && (
+                            <div className="flex flex-col gap-3">
+                              <p className="text-sm font-bold">
+                                Mídias anexadas
+                              </p>
+
+                              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                                {midias.map((midia, index) => (
+                                  <a
+                                    key={`${midia.url}-${index}`}
+                                    href={midia.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="group overflow-hidden rounded-2xl border border-gray-200 bg-muted"
+                                  >
+                                    {midiaEhImagem(midia.tipo) ? (
+                                      <div className="relative h-40 w-full bg-muted">
+                                        <Image
+                                          src={midia.url}
+                                          alt={midia.nome}
+                                          fill
+                                          sizes="240px"
+                                          className="object-cover transition group-hover:scale-105"
+                                          unoptimized
+                                        />
+                                      </div>
+                                    ) : midiaEhVideo(midia.tipo) ? (
+                                      <div className="flex h-40 w-full items-center justify-center bg-black text-white">
+                                        <div className="flex flex-col items-center gap-2">
+                                          <Play className="h-8 w-8" />
+                                          <span className="text-xs font-semibold">
+                                            Ver vídeo
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex h-40 w-full items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                                        Arquivo anexado
+                                      </div>
+                                    )}
+
+                                    <div className="p-3">
+                                      <p className="line-clamp-1 text-xs font-semibold">
+                                        {midia.nome}
+                                      </p>
+
+                                      <p className="text-xs text-muted-foreground">
+                                        {midia.tipo || "Tipo não informado"}
+                                      </p>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">

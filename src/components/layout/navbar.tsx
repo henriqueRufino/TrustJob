@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
-import logo from "@/assets/navbar/logo_tcc.png"
+import logo from "@/assets/navbar/tcc_logo_navbar.png"
 import { createClient } from "@/lib/supabase/client"
 
 type ConversaNavbarRow = {
@@ -332,7 +332,7 @@ const Navbar = () => {
     <div className="border-b bg-background">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <Link href="/">
-          <Image src={logo} className="h-12 w-24" alt="TrustJob" priority />
+          <Image src={logo} className="h-12 w-14" alt="TrustJob" priority />
         </Link>
 
         <nav className="hidden items-center gap-6 md:flex">

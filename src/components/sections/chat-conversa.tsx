@@ -56,13 +56,21 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
 
   const solicitacaoExiste = !!conversa?.servico_solicitado_id
   const solicitacaoPendente = conversa?.servico_solicitado_etapa_id === 1
-  const solicitacaoConcluida = conversa?.servico_solicitado_etapa_id === 4
+
+  const solicitacaoAceita =
+    conversa?.servico_solicitado_etapa_id !== null &&
+    conversa?.servico_solicitado_etapa_id !== undefined &&
+    conversa.servico_solicitado_etapa_id >= 2
+
+  const conversaFinalizada = conversa?.servico_solicitado_etapa_id === 9
 
   const podeClienteAceitarSolicitacao =
     usuarioEhCliente && solicitacaoExiste && solicitacaoPendente
 
   const podePrestadorCriarOuEditarSolicitacao =
-    usuarioEhPrestador && !solicitacaoConcluida
+    usuarioEhPrestador &&
+    !conversaFinalizada &&
+    (!solicitacaoExiste || solicitacaoPendente)
 
   const recarregarConversa = React.useCallback(async () => {
     const [conversaData, mensagensData] = await Promise.all([
@@ -208,6 +216,17 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
           await recarregarConversa()
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "servico_solicitado",
+        },
+        async () => {
+          await recarregarConversa()
+        }
+      )
       .subscribe()
 
     return () => {
@@ -244,6 +263,25 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
 
     setObservacoes(conversa.servico_solicitado_observacoes ?? "")
   }, [conversa, mostrarFormularioSolicitacao])
+
+  function getDataHoraMinimaAgendamento() {
+    const agora = new Date()
+
+    const ano = agora.getFullYear()
+    const mes = String(agora.getMonth() + 1).padStart(2, "0")
+    const dia = String(agora.getDate()).padStart(2, "0")
+    const hora = String(agora.getHours()).padStart(2, "0")
+    const minuto = String(agora.getMinutes()).padStart(2, "0")
+
+    return `${ano}-${mes}-${dia}T${hora}:${minuto}`
+  }
+
+  function dataAgendadaEhValida(data: string) {
+    const dataSelecionada = new Date(data)
+    const agora = new Date()
+
+    return dataSelecionada > agora
+  }
 
   async function handleEnviarMensagem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -293,8 +331,22 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
       return
     }
 
+    if (solicitacaoAceita) {
+      setErro(
+        "Esta solicitação já foi aceita pelo cliente e não pode mais ser editada."
+      )
+      return
+    }
+
     if (!dataAgendada) {
       setErro("Informe a data agendada.")
+      return
+    }
+
+    if (!dataAgendadaEhValida(dataAgendada)) {
+      setErro(
+        "A data agendada deve ser hoje em um horário futuro ou uma data futura."
+      )
       return
     }
 
@@ -351,6 +403,7 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
     try {
       await confirmarSolicitacaoPeloChat(conversaId, usuarioLogado.id)
       await recarregarConversa()
+      setMostrarFormularioSolicitacao(false)
     } catch (error) {
       setErro(
         error instanceof Error
@@ -363,6 +416,13 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
   }
 
   function abrirFormularioSolicitacao() {
+    if (!podePrestadorCriarOuEditarSolicitacao) {
+      setErro(
+        "Esta solicitação já foi aceita pelo cliente e não pode mais ser editada."
+      )
+      return
+    }
+
     setErro(null)
     setMostrarFormularioSolicitacao(true)
   }
@@ -541,17 +601,25 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
                 </div>
               </div>
 
-              {podePrestadorCriarOuEditarSolicitacao && (
-                <button
-                  type="button"
-                  onClick={abrirFormularioSolicitacao}
-                  className="shrink-0 rounded-xl bg-blue-950 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-900"
-                >
-                  {solicitacaoExiste
-                    ? "Editar solicitação"
-                    : "Criar solicitação"}
-                </button>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {conversaFinalizada && (
+                  <span className="rounded-xl bg-muted px-4 py-2 text-xs font-bold text-muted-foreground">
+                    Conversa finalizada
+                  </span>
+                )}
+
+                {podePrestadorCriarOuEditarSolicitacao && (
+                  <button
+                    type="button"
+                    onClick={abrirFormularioSolicitacao}
+                    className="rounded-xl bg-blue-950 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-900"
+                  >
+                    {solicitacaoExiste
+                      ? "Editar solicitação"
+                      : "Criar solicitação"}
+                  </button>
+                )}
+              </div>
             </div>
 
             {solicitacaoPendente && (
@@ -599,6 +667,13 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+
+            {solicitacaoAceita && !conversaFinalizada && (
+              <div className="border-b border-gray-200 bg-green-50 p-3 text-center text-xs font-semibold text-green-700">
+                Serviço aceito pelo cliente. Acompanhe os próximos passos na aba
+                Agendamentos.
               </div>
             )}
 
@@ -673,79 +748,85 @@ export default function ChatConversa({ conversaId }: ChatConversaProps) {
             </form>
           </div>
 
-          {mostrarFormularioSolicitacao && usuarioEhPrestador && (
-            <aside className="hidden w-80 shrink-0 border-l border-gray-200 bg-background p-4 md:block">
-              <form
-                onSubmit={handleSalvarSolicitacao}
-                className="flex h-full flex-col gap-4"
-              >
-                <div>
-                  <h2 className="text-lg font-bold">
-                    {solicitacaoExiste
-                      ? "Editar solicitação"
-                      : "Criar solicitação"}
-                  </h2>
+          {mostrarFormularioSolicitacao &&
+            usuarioEhPrestador &&
+            podePrestadorCriarOuEditarSolicitacao && (
+              <aside className="hidden w-80 shrink-0 border-l border-gray-200 bg-background p-4 md:block">
+                <form
+                  onSubmit={handleSalvarSolicitacao}
+                  className="flex h-full flex-col gap-4"
+                >
+                  <div>
+                    <h2 className="text-lg font-bold">
+                      {solicitacaoExiste
+                        ? "Editar solicitação"
+                        : "Criar solicitação"}
+                    </h2>
 
-                  <p className="text-xs text-muted-foreground">
-                    Informe os dados para enviar ao cliente.
-                  </p>
-                </div>
+                    <p className="text-xs text-muted-foreground">
+                      Informe os dados para enviar ao cliente.
+                    </p>
+                  </div>
 
-                <label className="flex flex-col gap-1 text-sm font-semibold">
-                  Data agendada
-                  <input
-                    type="datetime-local"
-                    value={dataAgendada}
-                    onChange={(event) => setDataAgendada(event.target.value)}
-                    className="h-11 rounded-xl border border-gray-300 bg-background px-3 text-sm outline-none"
-                  />
-                </label>
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    Data agendada
+                    <input
+                      type="datetime-local"
+                      value={dataAgendada}
+                      min={getDataHoraMinimaAgendamento()}
+                      onChange={(event) => {
+                        setDataAgendada(event.target.value)
+                        setErro(null)
+                      }}
+                      className="h-11 rounded-xl border border-gray-300 bg-background px-3 text-sm outline-none"
+                    />
+                  </label>
 
-                <label className="flex flex-col gap-1 text-sm font-semibold">
-                  Valor final
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={valorFinal}
-                    onChange={(event) => setValorFinal(event.target.value)}
-                    placeholder="Ex: 250"
-                    className="h-11 rounded-xl border border-gray-300 bg-background px-3 text-sm outline-none"
-                  />
-                </label>
+                  <label className="flex flex-col gap-1 text-sm font-semibold">
+                    Valor final
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={valorFinal}
+                      onChange={(event) => setValorFinal(event.target.value)}
+                      placeholder="Ex: 250"
+                      className="h-11 rounded-xl border border-gray-300 bg-background px-3 text-sm outline-none"
+                    />
+                  </label>
 
-                <label className="flex flex-1 flex-col gap-1 text-sm font-semibold">
-                  Observações
-                  <textarea
-                    value={observacoes}
-                    onChange={(event) => setObservacoes(event.target.value)}
-                    placeholder="Descreva detalhes da solicitação..."
-                    className="min-h-32 flex-1 resize-none rounded-xl border border-gray-300 bg-background p-3 text-sm outline-none"
-                  />
-                </label>
+                  <label className="flex flex-1 flex-col gap-1 text-sm font-semibold">
+                    Observações
+                    <textarea
+                      value={observacoes}
+                      onChange={(event) => setObservacoes(event.target.value)}
+                      placeholder="Descreva detalhes da solicitação..."
+                      className="min-h-32 flex-1 resize-none rounded-xl border border-gray-300 bg-background p-3 text-sm outline-none"
+                    />
+                  </label>
 
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="submit"
-                    disabled={salvandoSolicitacao}
-                    className="rounded-xl bg-blue-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-900 disabled:opacity-60"
-                  >
-                    {salvandoSolicitacao
-                      ? "Salvando..."
-                      : "Enviar solicitação"}
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="submit"
+                      disabled={salvandoSolicitacao}
+                      className="rounded-xl bg-blue-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-900 disabled:opacity-60"
+                    >
+                      {salvandoSolicitacao
+                        ? "Salvando..."
+                        : "Enviar solicitação"}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={fecharFormularioSolicitacao}
-                    disabled={salvandoSolicitacao}
-                    className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-bold transition hover:bg-muted disabled:opacity-60"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            </aside>
-          )}
+                    <button
+                      type="button"
+                      onClick={fecharFormularioSolicitacao}
+                      disabled={salvandoSolicitacao}
+                      className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-bold transition hover:bg-muted disabled:opacity-60"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </aside>
+            )}
         </div>
       </div>
     </section>

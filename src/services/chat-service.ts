@@ -344,88 +344,86 @@ export async function getConversasDoUsuarioLogado(): Promise<
 
   const conversas = (data ?? []) as unknown as ChatConversaListaRow[]
 
-  return conversas
-    .map((conversa) => {
-      const cliente = Array.isArray(conversa.cliente)
-        ? conversa.cliente[0]
-        : conversa.cliente
+  return conversas.map((conversa) => {
+    const cliente = Array.isArray(conversa.cliente)
+      ? conversa.cliente[0]
+      : conversa.cliente
 
-      const prestador = Array.isArray(conversa.prestador)
-        ? conversa.prestador[0]
-        : conversa.prestador
+    const prestador = Array.isArray(conversa.prestador)
+      ? conversa.prestador[0]
+      : conversa.prestador
 
-      const servico = Array.isArray(conversa.servico)
-        ? conversa.servico[0]
-        : conversa.servico
+    const servico = Array.isArray(conversa.servico)
+      ? conversa.servico[0]
+      : conversa.servico
 
-      const servicoSolicitado = Array.isArray(conversa.servico_solicitado)
-        ? conversa.servico_solicitado[0]
-        : conversa.servico_solicitado
+    const servicoSolicitado = Array.isArray(conversa.servico_solicitado)
+      ? conversa.servico_solicitado[0]
+      : conversa.servico_solicitado
 
-      const usuarioLogadoEhCliente = conversa.cliente_id === usuarioLogado.id
+    const usuarioLogadoEhCliente = conversa.cliente_id === usuarioLogado.id
 
-      const outroUsuario = usuarioLogadoEhCliente ? prestador : cliente
+    const outroUsuario = usuarioLogadoEhCliente ? prestador : cliente
 
-      const outroUsuarioId = usuarioLogadoEhCliente
-        ? conversa.prestador_id
-        : conversa.cliente_id
+    const outroUsuarioId = usuarioLogadoEhCliente
+      ? conversa.prestador_id
+      : conversa.cliente_id
 
-      const mensagensOrdenadas = [...(conversa.chat_mensagem ?? [])].sort(
-        (a, b) => {
-          const dataA = a.created_at ? new Date(a.created_at).getTime() : 0
-          const dataB = b.created_at ? new Date(b.created_at).getTime() : 0
+    const mensagensOrdenadas = [...(conversa.chat_mensagem ?? [])].sort(
+      (a, b) => {
+        const dataA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const dataB = b.created_at ? new Date(b.created_at).getTime() : 0
 
-          return dataB - dataA
-        }
-      )
-
-      const ultimaMensagem = mensagensOrdenadas[0] ?? null
-
-      const ultimaLeitura = usuarioLogadoEhCliente
-        ? conversa.cliente_last_read_at
-        : conversa.prestador_last_read_at
-
-      const quantidadeMensagensNaoLidas = mensagensOrdenadas.filter(
-        (mensagem) => {
-          if (!mensagem.created_at) {
-            return false
-          }
-
-          if (mensagem.remetente_id === usuarioLogado.id) {
-            return false
-          }
-
-          if (!ultimaLeitura) {
-            return true
-          }
-
-          return new Date(mensagem.created_at) > new Date(ultimaLeitura)
-        }
-      ).length
-
-      return {
-        id: conversa.id,
-        cliente_id: conversa.cliente_id,
-        prestador_id: conversa.prestador_id,
-        servico_id: conversa.servico_id,
-        servico_solicitado_id: conversa.servico_solicitado_id,
-        created_at: conversa.created_at,
-        updated_at: conversa.updated_at,
-        cliente_last_read_at: conversa.cliente_last_read_at,
-        prestador_last_read_at: conversa.prestador_last_read_at,
-        outro_usuario_id: outroUsuarioId,
-        outro_usuario_nome: outroUsuario?.nome ?? null,
-        outro_usuario_foto: outroUsuario?.foto ?? null,
-        servico_nome: servico?.nome ?? null,
-        ultima_mensagem: ultimaMensagem?.mensagem ?? null,
-        ultima_mensagem_created_at: ultimaMensagem?.created_at ?? null,
-        ultima_mensagem_remetente_id: ultimaMensagem?.remetente_id ?? null,
-        quantidade_mensagens_nao_lidas: quantidadeMensagensNaoLidas,
-        servico_solicitado_etapa_id:
-          servicoSolicitado?.servico_etapa_id ?? null,
+        return dataB - dataA
       }
-    })
-    .filter((conversa) => conversa.servico_solicitado_etapa_id !== 4)
+    )
+
+    const ultimaMensagem = mensagensOrdenadas[0] ?? null
+
+    const ultimaLeitura = usuarioLogadoEhCliente
+      ? conversa.cliente_last_read_at
+      : conversa.prestador_last_read_at
+
+    const quantidadeMensagensNaoLidas = mensagensOrdenadas.filter(
+      (mensagem) => {
+        if (!mensagem.created_at) {
+          return false
+        }
+
+        if (mensagem.remetente_id === usuarioLogado.id) {
+          return false
+        }
+
+        if (!ultimaLeitura) {
+          return true
+        }
+
+        return new Date(mensagem.created_at) > new Date(ultimaLeitura)
+      }
+    ).length
+
+    return {
+      id: conversa.id,
+      cliente_id: conversa.cliente_id,
+      prestador_id: conversa.prestador_id,
+      servico_id: conversa.servico_id,
+      servico_solicitado_id: conversa.servico_solicitado_id,
+      created_at: conversa.created_at,
+      updated_at: conversa.updated_at,
+      cliente_last_read_at: conversa.cliente_last_read_at,
+      prestador_last_read_at: conversa.prestador_last_read_at,
+      outro_usuario_id: outroUsuarioId,
+      outro_usuario_nome: outroUsuario?.nome ?? null,
+      outro_usuario_foto: outroUsuario?.foto ?? null,
+      servico_nome: servico?.nome ?? null,
+      ultima_mensagem: ultimaMensagem?.mensagem ?? null,
+      ultima_mensagem_created_at: ultimaMensagem?.created_at ?? null,
+      ultima_mensagem_remetente_id: ultimaMensagem?.remetente_id ?? null,
+      quantidade_mensagens_nao_lidas: quantidadeMensagensNaoLidas,
+      servico_solicitado_etapa_id:
+        servicoSolicitado?.servico_etapa_id ?? null,
+    }
+  })
 }
 
 export type ChatConversaDetalhe = {
@@ -662,6 +660,15 @@ export async function criarOuAtualizarSolicitacaoPeloChat({
     throw new Error("Esta conversa não possui serviço vinculado.")
   }
 
+  if (
+    conversa.servico_solicitado_id &&
+    conversa.servico_solicitado_etapa_id !== 1
+  ) {
+    throw new Error(
+      "Esta solicitação já foi aceita pelo cliente e não pode mais ser editada."
+    )
+  }
+
   let servicoSolicitadoId = conversa.servico_solicitado_id
 
   if (servicoSolicitadoId) {
@@ -674,6 +681,7 @@ export async function criarOuAtualizarSolicitacaoPeloChat({
         servico_etapa_id: 1,
         inicio: null,
         fim: null,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", servicoSolicitadoId)
 
@@ -762,10 +770,15 @@ export async function confirmarSolicitacaoPeloChat(
     throw new Error("Nenhuma solicitação encontrada nesta conversa.")
   }
 
+  if (conversa.servico_solicitado_etapa_id !== 1) {
+    throw new Error("Esta solicitação não está mais pendente.")
+  }
+
   const { error } = await supabase
     .from("servico_solicitado")
     .update({
       servico_etapa_id: 2,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", conversa.servico_solicitado_id)
 
@@ -777,43 +790,5 @@ export async function confirmarSolicitacaoPeloChat(
     conversaId,
     clienteId,
     "Serviço agendado com sucesso, acesse a aba agendamentos para mais detalhes."
-  )
-}
-
-export async function concluirSolicitacaoPeloChat(
-  conversaId: number,
-  prestadorId: number
-) {
-  const supabase = createClient()
-
-  const conversa = await getConversaPorId(conversaId)
-
-  if (!conversa) {
-    throw new Error("Conversa não encontrada.")
-  }
-
-  if (conversa.prestador_id !== prestadorId) {
-    throw new Error("Apenas o prestador pode concluir esta solicitação.")
-  }
-
-  if (!conversa.servico_solicitado_id) {
-    throw new Error("Nenhuma solicitação encontrada nesta conversa.")
-  }
-
-  const { error } = await supabase
-    .from("servico_solicitado")
-    .update({
-      servico_etapa_id: 4,
-    })
-    .eq("id", conversa.servico_solicitado_id)
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  await enviarMensagemChat(
-    conversaId,
-    prestadorId,
-    "Serviço concluído pelo prestador."
   )
 }
