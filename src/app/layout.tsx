@@ -6,13 +6,13 @@ import Footer from "@/components/layout/footer";
 
 export const metadata: Metadata = {
   title: "TrustJob",
-  description: "Trabalho de conclusão de curso - Henrique & Felipe",  
+  description: "Trabalho de conclusão de curso - Henrique & Felipe",
   openGraph: {
     title: "TrustJob",
     description: "Encontre prestadores confiáveis na sua região",
-    images: ["/capa.png"],
+    images: ["/tcc_logo_footer.png"],
   },
-};
+}
 
 export default function RootLayout({
   children,

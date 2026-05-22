@@ -3,21 +3,23 @@ import type { PrestadorCatalogo } from "@/types/servico-prestador"
 
 type ServicoPrestadorRow = {
   id: number
-  user_id: number
-  servico_id: number
+  servico_id: number | null
+  user_id: number | null
   valor_medio: number | null
   user:
     | {
         id: number
         nome: string | null
         foto: string | null
-        tipo_user_id: number | null
         user_address:
           | {
               cidade:
                 | {
                     nome: string | null
                   }
+                | {
+                    nome: string | null
+                  }[]
                 | null
             }
           | {
@@ -25,6 +27,9 @@ type ServicoPrestadorRow = {
                 | {
                     nome: string | null
                   }
+                | {
+                    nome: string | null
+                  }[]
                 | null
             }[]
           | null
@@ -33,13 +38,15 @@ type ServicoPrestadorRow = {
         id: number
         nome: string | null
         foto: string | null
-        tipo_user_id: number | null
         user_address:
           | {
               cidade:
                 | {
                     nome: string | null
                   }
+                | {
+                    nome: string | null
+                  }[]
                 | null
             }
           | {
@@ -47,6 +54,9 @@ type ServicoPrestadorRow = {
                 | {
                     nome: string | null
                   }
+                | {
+                    nome: string | null
+                  }[]
                 | null
             }[]
           | null
@@ -54,10 +64,13 @@ type ServicoPrestadorRow = {
     | null
 }
 
-type AvaliacaoRow = {
-  user_id: number
-  servico_id: number
+type AvaliacaoPrestadorRow = {
+  user_id: number | null
   nota: number | null
+}
+
+function getRelacaoUnica<T>(relacao: T | T[] | null | undefined) {
+  return Array.isArray(relacao) ? relacao[0] : relacao
 }
 
 export async function getPrestadoresPorServico(
@@ -65,18 +78,17 @@ export async function getPrestadoresPorServico(
 ): Promise<PrestadorCatalogo[]> {
   const supabase = createClient()
 
-  const { data: prestadores, error: prestadoresError } = await supabase
+  const { data: prestadoresData, error: prestadoresError } = await supabase
     .from("servico_prestador")
     .select(`
       id,
-      user_id,
       servico_id,
+      user_id,
       valor_medio,
       user:user_id (
         id,
         nome,
         foto,
-        tipo_user_id,
         user_address (
           cidade:cidade_id (
             nome
@@ -90,61 +102,60 @@ export async function getPrestadoresPorServico(
     throw new Error(prestadoresError.message)
   }
 
-  const { data: avaliacoes, error: avaliacoesError } = await supabase
-    .from("avaliacao")
-    .select("user_id, servico_id, nota")
-    .eq("servico_id", servicoId)
+  const prestadores = (prestadoresData ?? []) as unknown as ServicoPrestadorRow[]
 
-  if (avaliacoesError) {
-    throw new Error(avaliacoesError.message)
+  const prestadoresIds = prestadores
+    .map((prestador) => prestador.user_id)
+    .filter((id): id is number => id !== null)
+
+  let avaliacoes: AvaliacaoPrestadorRow[] = []
+
+  if (prestadoresIds.length > 0) {
+    const { data: avaliacoesData, error: avaliacoesError } = await supabase
+      .from("avaliacao")
+      .select("user_id, nota")
+      .in("user_id", prestadoresIds)
+
+    if (avaliacoesError) {
+      throw new Error(avaliacoesError.message)
+    }
+
+    avaliacoes = (avaliacoesData ?? []) as unknown as AvaliacaoPrestadorRow[]
   }
 
-  const prestadoresTyped = (prestadores ?? []) as unknown as ServicoPrestadorRow[]
-  const avaliacoesTyped = (avaliacoes ?? []) as AvaliacaoRow[]
+  return prestadores.map((prestador) => {
+    const usuario = getRelacaoUnica(prestador.user)
+    const endereco = getRelacaoUnica(usuario?.user_address)
+    const cidade = getRelacaoUnica(endereco?.cidade)
 
-  return prestadoresTyped
-    .map((prestador) => {
-      const usuario = Array.isArray(prestador.user)
-        ? prestador.user[0]
-        : prestador.user
+    const avaliacoesDoPrestador = avaliacoes.filter(
+      (avaliacao) =>
+        avaliacao.user_id === prestador.user_id && avaliacao.nota !== null
+    )
 
-      const endereco = Array.isArray(usuario?.user_address)
-        ? usuario.user_address[0]
-        : usuario?.user_address
+    const totalAvaliacoes = avaliacoesDoPrestador.length
 
-      const nomeCidade = endereco?.cidade?.nome ?? null
+    const mediaAvaliacoes =
+      totalAvaliacoes > 0
+        ? avaliacoesDoPrestador.reduce(
+            (total, avaliacao) => total + Number(avaliacao.nota ?? 0),
+            0
+          ) / totalAvaliacoes
+        : 0
 
-      const avaliacoesDoPrestador = avaliacoesTyped.filter(
-        (avaliacao) =>
-          avaliacao.user_id === prestador.user_id &&
-          avaliacao.servico_id === prestador.servico_id &&
-          avaliacao.nota !== null
-      )
-
-      const totalAvaliacoes = avaliacoesDoPrestador.length
-
-      const mediaAvaliacoes =
-        totalAvaliacoes > 0
-          ? avaliacoesDoPrestador.reduce(
-              (total, avaliacao) => total + Number(avaliacao.nota),
-              0
-            ) / totalAvaliacoes
-          : 0
-
-      return {
-        id: prestador.id,
-        user_id: prestador.user_id,
-        servico_id: prestador.servico_id,
-        nome: usuario?.nome ?? "Prestador sem nome",
-        foto: usuario?.foto ?? null,
-        cidade: nomeCidade,
-        valor_medio:
-          prestador.valor_medio !== null ? Number(prestador.valor_medio) : null,
-        media_avaliacoes: mediaAvaliacoes,
-        total_avaliacoes: totalAvaliacoes,
-      }
-    })
-    .filter((prestador) => prestador.nome !== "Prestador sem nome")
+    return {
+      id: prestador.id,
+      servico_id: prestador.servico_id ?? servicoId,
+      user_id: prestador.user_id ?? 0,
+      valor_medio:
+        prestador.valor_medio !== null ? Number(prestador.valor_medio) : null,
+      nome: usuario?.nome ?? "Prestador sem nome",
+      foto: usuario?.foto ?? null,
+      cidade: cidade?.nome ?? null,
+      media_avaliacoes: mediaAvaliacoes,
+      total_avaliacoes: totalAvaliacoes,
+    }
+  })
 }
 
 export async function verificarPrestadorNoServico(
@@ -155,7 +166,7 @@ export async function verificarPrestadorNoServico(
 
   const { data, error } = await supabase
     .from("servico_prestador")
-    .select("id")
+    .select("id, servico_id, user_id, valor_medio")
     .eq("servico_id", servicoId)
     .eq("user_id", userId)
     .maybeSingle()
@@ -171,69 +182,59 @@ export async function cadastrarPrestadorNoServico(
   servicoId: number,
   userId: number,
   valorMedio: number
-  ) {
-    const supabase = createClient()
+) {
+  const supabase = createClient()
 
-    const jaExiste = await verificarPrestadorNoServico(servicoId, userId)
+  const cadastroExistente = await verificarPrestadorNoServico(servicoId, userId)
 
-    if (jaExiste) {
-      return jaExiste
-    }
-
-    const { data, error } = await supabase
-      .from("servico_prestador")
-      .insert({
-        servico_id: servicoId,
-        user_id: userId,
-        valor_medio: valorMedio,
-      })
-      .select("id")
-      .single()
-
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    return data
+  if (cadastroExistente) {
+    throw new Error("Você já está cadastrado neste serviço.")
   }
 
-  export async function atualizarValorMedioPrestadorNoServico(
-    servicoId: number,
-    userId: number,
-    valorMedio: number
-  ) {
-    const supabase = createClient()
+  const { error } = await supabase.from("servico_prestador").insert({
+    servico_id: servicoId,
+    user_id: userId,
+    valor_medio: valorMedio,
+  })
 
-    const { data, error } = await supabase
-      .from("servico_prestador")
-      .update({
-        valor_medio: valorMedio,
-      })
-      .eq("servico_id", servicoId)
-      .eq("user_id", userId)
-      .select("id")
-      .single()
-
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    return data
+  if (error) {
+    throw new Error(error.message)
   }
+}
 
-  export async function excluirPrestadorDoServico(
-    servicoId: number,
-    userId: number
-  ) {
-    const supabase = createClient()
+export async function atualizarValorMedioPrestadorNoServico(
+  servicoId: number,
+  userId: number,
+  valorMedio: number
+) {
+  const supabase = createClient()
 
-    const { error } = await supabase
-      .from("servico_prestador")
-      .delete()
-      .eq("servico_id", servicoId)
-      .eq("user_id", userId)
+  const { error } = await supabase
+    .from("servico_prestador")
+    .update({
+      valor_medio: valorMedio,
+    })
+    .eq("servico_id", servicoId)
+    .eq("user_id", userId)
 
-    if (error) {
-      throw new Error(error.message)
-    }
+  if (error) {
+    throw new Error(error.message)
   }
+}
+
+export async function excluirPrestadorDoServico(
+  servicoId: number,
+  userId: number
+) {
+  const supabase = createClient()
+
+  const { error } = await supabase
+    .from("servico_prestador")
+    .delete()
+    .eq("servico_id", servicoId)
+    .eq("user_id", userId)
+
+  if (error) {
+    throw new Error(error.message)
+  }
+}

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Plus } from "lucide-react"
+import { ArrowUpDown, Plus } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import type { PrestadorCatalogo } from "@/types/servico-prestador"
 import {
@@ -24,6 +24,8 @@ type UsuarioLogado = {
   tipo_user_id: number | null
 }
 
+type TipoOrdenacao = "avaliacao" | "cidade" | "valor"
+
 export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
   const supabase = createClient()
 
@@ -32,6 +34,9 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
   const [usuarioLogado, setUsuarioLogado] =
     React.useState<UsuarioLogado | null>(null)
   const [jaCadastrado, setJaCadastrado] = React.useState(false)
+
+  const [ordenacao, setOrdenacao] = React.useState<TipoOrdenacao>("avaliacao")
+  const [ordemAscendente, setOrdemAscendente] = React.useState(false)
 
   const [mostrarCampoValor, setMostrarCampoValor] = React.useState(false)
   const [valorMedio, setValorMedio] = React.useState("")
@@ -49,16 +54,39 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
   const podeMostrarBotaoCadastro = usuarioEhPrestador && !jaCadastrado
 
   const prestadoresOrdenados = React.useMemo(() => {
-    if (!usuarioLogado) {
-      return prestadores
-    }
+    const lista = [...prestadores]
 
-    return [...prestadores].sort((a, b) => {
-      if (a.user_id === usuarioLogado.id) return -1
-      if (b.user_id === usuarioLogado.id) return 1
-      return 0
+    lista.sort((a, b) => {
+      const aEhUsuarioLogado = usuarioLogado?.id === a.user_id
+      const bEhUsuarioLogado = usuarioLogado?.id === b.user_id
+
+      if (aEhUsuarioLogado) return -1
+      if (bEhUsuarioLogado) return 1
+
+      if (ordenacao === "avaliacao") {
+        const mediaA = Number(a.media_avaliacoes ?? 0)
+        const mediaB = Number(b.media_avaliacoes ?? 0)
+
+        return ordemAscendente ? mediaA - mediaB : mediaB - mediaA
+      }
+
+      if (ordenacao === "cidade") {
+        const cidadeA = a.cidade ?? ""
+        const cidadeB = b.cidade ?? ""
+
+        return ordemAscendente
+          ? cidadeA.localeCompare(cidadeB)
+          : cidadeB.localeCompare(cidadeA)
+      }
+
+      const valorA = Number(a.valor_medio ?? 0)
+      const valorB = Number(b.valor_medio ?? 0)
+
+      return ordemAscendente ? valorA - valorB : valorB - valorA
     })
-  }, [prestadores, usuarioLogado])
+
+    return lista
+  }, [prestadores, usuarioLogado, ordenacao, ordemAscendente])
 
   React.useEffect(() => {
     async function carregarDados() {
@@ -310,6 +338,24 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
     }).format(valor)
   }
 
+  function formatarMedia(media: number | null | undefined) {
+    return Number(media ?? 0).toFixed(1).replace(".", ",")
+  }
+
+  function getTextoOrdenacao() {
+    if (ordenacao === "avaliacao") {
+      return ordemAscendente
+        ? "menor avaliação primeiro"
+        : "maior avaliação primeiro"
+    }
+
+    if (ordenacao === "cidade") {
+      return ordemAscendente ? "cidade A-Z" : "cidade Z-A"
+    }
+
+    return ordemAscendente ? "menor valor primeiro" : "maior valor primeiro"
+  }
+
   function renderFotoPrestador(
     prestador: PrestadorCatalogo,
     prestadorEhUsuarioLogado: boolean
@@ -358,7 +404,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
 
   return (
     <section className="flex w-full justify-center px-4 py-10 md:px-8">
-      <div className="flex w-full max-w-6xl flex-col gap-10">
+      <div className="flex w-full max-w-6xl flex-col gap-8">
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="text-2xl font-bold uppercase md:text-3xl">
             {nomeServico}
@@ -369,6 +415,42 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
           </p>
         </div>
 
+        <div className="flex flex-col gap-4 rounded-3xl border border-gray-300 bg-background p-4 shadow-sm md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-lg font-bold">Prestadores disponíveis</h2>
+
+            <p className="text-sm text-muted-foreground">
+              Ordenando por {getTextoOrdenacao()}.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <label className="flex flex-col gap-1 text-sm font-semibold">
+              Ordenar por
+              <select
+                value={ordenacao}
+                onChange={(event) =>
+                  setOrdenacao(event.target.value as TipoOrdenacao)
+                }
+                className="h-11 rounded-xl border border-gray-300 bg-background px-3 text-sm"
+              >
+                <option value="avaliacao">Avaliação geral</option>
+                <option value="cidade">Cidade</option>
+                <option value="valor">Valor médio</option>
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setOrdemAscendente((valorAtual) => !valorAtual)}
+              className="flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 text-sm font-semibold transition hover:bg-muted sm:self-end"
+            >
+              <ArrowUpDown className="h-4 w-4" />
+              Inverter
+            </button>
+          </div>
+        </div>
+
         {erro && (
           <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             {erro}
@@ -377,7 +459,7 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {podeMostrarBotaoCadastro && (
-            <div className="flex min-h-72 w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
+            <div className="flex min-h-80 w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
               {!mostrarCampoValor ? (
                 <button
                   type="button"
@@ -438,15 +520,18 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
             </div>
           )}
 
-          {prestadores.length > 0 ? (
+          {prestadoresOrdenados.length > 0 ? (
             prestadoresOrdenados.map((prestador) => {
               const prestadorEhUsuarioLogado =
                 usuarioLogado?.id === prestador.user_id
 
               const estaEditando = prestadorEditandoId === prestador.id
 
+              const media = Number(prestador.media_avaliacoes ?? 0)
+              const totalAvaliacoes = Number(prestador.total_avaliacoes ?? 0)
+
               const conteudoCard = (
-                <div className="flex min-h-72 w-full flex-col items-center justify-start gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
+                <div className="flex min-h-80 w-full flex-col items-center justify-start gap-3 rounded-3xl border-2 border-gray-300 bg-background p-4 text-center transition hover:bg-muted">
                   {renderFotoPrestador(prestador, prestadorEhUsuarioLogado)}
 
                   <p className="line-clamp-2 min-h-10 text-sm font-bold leading-normal">
@@ -454,13 +539,15 @@ export default function ServicoDetalhe({ servicoId }: ServicoDetalheProps) {
                   </p>
 
                   <div className="flex text-foreground">
-                    {renderEstrelas(prestador.media_avaliacoes)}
+                    {renderEstrelas(media)}
                   </div>
 
                   <div className="flex w-full flex-col items-center gap-1 text-xs font-semibold">
+                    <span>Média {formatarMedia(media)} de 5</span>
+
                     <span>
-                      {prestador.total_avaliacoes} avaliaç
-                      {prestador.total_avaliacoes === 1 ? "ão" : "ões"}
+                      {totalAvaliacoes} avaliaç
+                      {totalAvaliacoes === 1 ? "ão" : "ões"}
                     </span>
 
                     <span>{prestador.cidade ?? "Cidade não informada"}</span>
