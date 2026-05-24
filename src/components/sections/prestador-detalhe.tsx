@@ -4,11 +4,20 @@ import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { ArrowUpDown, ChevronDown, ChevronUp, Play } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import {
+  atualizarValorMedioPrestadorNoServico,
+  excluirPrestadorDoServico,
+} from "@/services/servico-prestador-service"
 import {
   getAvaliacoesPorPrestador,
+  getMediasAvaliacoesServicosDoPrestador,
   getPrestadorDetalhe,
+  getServicosDoPrestador,
   type AvaliacaoPrestadorData,
+  type MediaServicoPrestadorData,
   type PrestadorDetalheData,
+  type ServicoPrestadorPerfilData,
 } from "@/services/prestador-service"
 
 type PrestadorDetalheProps = {
@@ -28,6 +37,8 @@ export default function PrestadorDetalhe({
   prestadorId,
   servicoId = null,
 }: PrestadorDetalheProps) {
+  const supabase = React.useMemo(() => createClient(), [])
+
   const [prestador, setPrestador] = React.useState<PrestadorDetalheData | null>(
     null
   )
@@ -35,6 +46,24 @@ export default function PrestadorDetalhe({
   const [avaliacoes, setAvaliacoes] = React.useState<AvaliacaoPrestadorData[]>(
     []
   )
+
+  const [servicosPrestador, setServicosPrestador] = React.useState<
+    ServicoPrestadorPerfilData[]
+  >([])
+
+  const [avaliacoesPorServico, setAvaliacoesPorServico] = React.useState<
+    MediaServicoPrestadorData[]
+  >([])
+
+  const [usuarioLogadoId, setUsuarioLogadoId] = React.useState<number | null>(
+    null
+  )
+
+  const [servicoEditandoId, setServicoEditandoId] = React.useState<
+    number | null
+  >(null)
+  const [valorMedioEditando, setValorMedioEditando] = React.useState("")
+  const [salvandoServico, setSalvandoServico] = React.useState(false)
 
   const [ordenacao, setOrdenacao] =
     React.useState<TipoOrdenacao>("cronologica")
@@ -47,32 +76,64 @@ export default function PrestadorDetalhe({
   const [loading, setLoading] = React.useState(true)
   const [erro, setErro] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    async function carregarDados() {
-      setLoading(true)
-      setErro(null)
+  const usuarioEhDonoDoPerfil = usuarioLogadoId === prestadorId
 
-      try {
-        const [prestadorData, avaliacoesData] = await Promise.all([
-          getPrestadorDetalhe(prestadorId),
-          getAvaliacoesPorPrestador(prestadorId),
-        ])
+  const carregarDados = React.useCallback(async () => {
+    setLoading(true)
+    setErro(null)
 
-        setPrestador(prestadorData)
-        setAvaliacoes(avaliacoesData)
-      } catch (error) {
-        setErro(
-          error instanceof Error
-            ? error.message
-            : "Erro ao carregar dados do prestador."
-        )
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      let usuarioId: number | null = null
+
+      if (user) {
+        const { data: perfil, error: perfilError } = await supabase
+          .from("user")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .maybeSingle()
+
+        if (perfilError) {
+          throw new Error(perfilError.message)
+        }
+
+        usuarioId = perfil?.id ?? null
       }
 
-      setLoading(false)
+      const [
+        prestadorData,
+        avaliacoesData,
+        servicosPrestadorData,
+        avaliacoesPorServicoData,
+      ] = await Promise.all([
+        getPrestadorDetalhe(prestadorId),
+        getAvaliacoesPorPrestador(prestadorId),
+        getServicosDoPrestador(prestadorId),
+        getMediasAvaliacoesServicosDoPrestador(prestadorId),
+      ])
+
+      setUsuarioLogadoId(usuarioId)
+      setPrestador(prestadorData)
+      setAvaliacoes(avaliacoesData)
+      setServicosPrestador(servicosPrestadorData)
+      setAvaliacoesPorServico(avaliacoesPorServicoData)
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro ao carregar dados do prestador."
+      )
     }
 
+    setLoading(false)
+  }, [prestadorId, supabase])
+
+  React.useEffect(() => {
     carregarDados()
-  }, [prestadorId])
+  }, [carregarDados])
 
   const avaliacoesValidas = React.useMemo(() => {
     return avaliacoes.filter((avaliacao) => avaliacao.nota !== null)
@@ -122,6 +183,18 @@ export default function PrestadorDetalhe({
     return lista
   }, [avaliacoes, ordenacao, ordemAscendente])
 
+  const servicosPrestadorOrdenados = React.useMemo(() => {
+    return [...servicosPrestador].sort((a, b) =>
+      a.servico_nome.localeCompare(b.servico_nome)
+    )
+  }, [servicosPrestador])
+
+  const avaliacoesPorServicoOrdenadas = React.useMemo(() => {
+    return [...avaliacoesPorServico].sort((a, b) =>
+      a.servico_nome.localeCompare(b.servico_nome)
+    )
+  }, [avaliacoesPorServico])
+
   function renderEstrelas(media: number, tamanho: "sm" | "md" = "md") {
     const mediaArredondada = Math.round(media)
 
@@ -133,6 +206,21 @@ export default function PrestadorDetalhe({
         {index < mediaArredondada ? "★" : "☆"}
       </span>
     ))
+  }
+
+  function formatarMedia(media: number) {
+    return media.toFixed(1).replace(".", ",")
+  }
+
+  function formatarValor(valor: number | null) {
+    if (valor === null) {
+      return "Valor não informado"
+    }
+
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(valor)
   }
 
   function formatarData(data: string | null) {
@@ -231,6 +319,91 @@ export default function PrestadorDetalhe({
     return possuiComentario || possuiMidia
   }
 
+  function iniciarEdicaoServico(servico: ServicoPrestadorPerfilData) {
+    setErro(null)
+    setServicoEditandoId(servico.servico_id)
+    setValorMedioEditando(
+      servico.valor_medio !== null
+        ? String(servico.valor_medio).replace(".", ",")
+        : ""
+    )
+  }
+
+  function cancelarEdicaoServico() {
+    setServicoEditandoId(null)
+    setValorMedioEditando("")
+    setErro(null)
+  }
+
+  async function handleSalvarValorServico(servico: ServicoPrestadorPerfilData) {
+    const valorNormalizado = valorMedioEditando.replace(",", ".")
+    const valorConvertido = Number(valorNormalizado)
+
+    if (!valorMedioEditando.trim()) {
+      setErro("Informe o valor médio do serviço.")
+      return
+    }
+
+    if (Number.isNaN(valorConvertido) || valorConvertido <= 0) {
+      setErro("Informe um valor médio válido para o serviço.")
+      return
+    }
+
+    setSalvandoServico(true)
+    setErro(null)
+
+    try {
+      await atualizarValorMedioPrestadorNoServico(
+        servico.servico_id,
+        prestadorId,
+        valorConvertido
+      )
+
+      setServicoEditandoId(null)
+      setValorMedioEditando("")
+      await carregarDados()
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro ao atualizar valor do serviço."
+      )
+    }
+
+    setSalvandoServico(false)
+  }
+
+  async function handleExcluirServico(servico: ServicoPrestadorPerfilData) {
+    const confirmarExclusao = window.confirm(
+      "Tem certeza que deseja remover este serviço do seu catálogo?"
+    )
+
+    if (!confirmarExclusao) {
+      return
+    }
+
+    setSalvandoServico(true)
+    setErro(null)
+
+    try {
+      await excluirPrestadorDoServico(servico.servico_id, prestadorId)
+
+      if (servicoEditandoId === servico.servico_id) {
+        cancelarEdicaoServico()
+      }
+
+      await carregarDados()
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Erro ao excluir serviço do prestador."
+      )
+    }
+
+    setSalvandoServico(false)
+  }
+
   if (loading) {
     return (
       <section className="flex justify-center px-4 py-10 md:px-8">
@@ -325,21 +498,158 @@ export default function PrestadorDetalhe({
         </div>
 
         <div className="rounded-3xl border border-gray-300 bg-background p-6 shadow-sm">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <h2 className="text-xl font-bold">Avaliações geral do prestador</h2>
-
-            <div className="flex text-foreground">
-              {renderEstrelas(mediaAvaliacoes)}
-            </div>
-
-            <p className="text-sm font-semibold">
-              Média {mediaAvaliacoes.toFixed(1).replace(".", ",")} de 5
-            </p>
+          <div className="mb-5 text-center">
+            <h2 className="text-xl font-bold">Serviços prestados</h2>
 
             <p className="text-sm text-muted-foreground">
-              {totalAvaliacoes} avaliaç
-              {totalAvaliacoes === 1 ? "ão" : "ões"}
+              Serviços que este prestador oferece pela plataforma.
             </p>
+          </div>
+
+          {servicosPrestadorOrdenados.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {servicosPrestadorOrdenados.map((servico) => {
+                const estaEditando = servicoEditandoId === servico.servico_id
+
+                return (
+                  <div
+                    key={servico.id}
+                    className="rounded-2xl border border-gray-200 p-4"
+                  >
+                    <p className="font-bold">{servico.servico_nome}</p>
+
+                    {!estaEditando ? (
+                      <>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Valor médio
+                        </p>
+
+                        <p className="text-sm font-bold">
+                          {formatarValor(servico.valor_medio)}
+                        </p>
+
+                        {usuarioEhDonoDoPerfil && (
+                          <div className="mt-4 flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicaoServico(servico)}
+                              disabled={salvandoServico}
+                              className="rounded-xl bg-blue-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-900 disabled:opacity-60"
+                            >
+                              Editar valor
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleExcluirServico(servico)}
+                              disabled={salvandoServico}
+                              className="rounded-xl border border-red-300 px-4 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                            >
+                              Excluir serviço
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="mt-3 flex flex-col gap-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={valorMedioEditando}
+                          onChange={(event) =>
+                            setValorMedioEditando(event.target.value)
+                          }
+                          placeholder="Ex: 200,00"
+                          className="h-10 rounded-xl border border-gray-300 bg-background px-3 text-sm outline-none"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => handleSalvarValorServico(servico)}
+                          disabled={salvandoServico}
+                          className="rounded-xl bg-blue-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-900 disabled:opacity-60"
+                        >
+                          {salvandoServico ? "Salvando..." : "Salvar valor"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleExcluirServico(servico)}
+                          disabled={salvandoServico}
+                          className="rounded-xl border border-red-300 px-4 py-2 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                        >
+                          Excluir serviço
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={cancelarEdicaoServico}
+                          disabled={salvandoServico}
+                          className="text-sm font-bold text-muted-foreground transition hover:text-foreground disabled:opacity-60"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-center text-sm text-muted-foreground">
+              Este prestador ainda não possui serviços cadastrados.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-3xl border border-gray-300 bg-background p-6 shadow-sm">
+          <div className="mb-6 text-center">
+            <h2 className="text-xl font-bold">Avaliações do prestador</h2>
+
+            <p className="text-sm text-muted-foreground">
+              Média geral e média por serviço.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl border border-gray-200 p-4 text-center">
+              <p className="font-bold">Geral</p>
+
+              <div className="mt-3 flex justify-center text-foreground">
+                {renderEstrelas(mediaAvaliacoes, "sm")}
+              </div>
+
+              <p className="mt-2 text-sm font-semibold">
+                Média {formatarMedia(mediaAvaliacoes)} de 5
+              </p>
+
+              <p className="text-sm text-muted-foreground">
+                {totalAvaliacoes} avaliaç
+                {totalAvaliacoes === 1 ? "ão" : "ões"}
+              </p>
+            </div>
+
+            {avaliacoesPorServicoOrdenadas.map((servico) => (
+              <div
+                key={servico.servico_id}
+                className="rounded-2xl border border-gray-200 p-4 text-center"
+              >
+                <p className="font-bold">{servico.servico_nome}</p>
+
+                <div className="mt-3 flex justify-center text-foreground">
+                  {renderEstrelas(servico.media_avaliacoes, "sm")}
+                </div>
+
+                <p className="mt-2 text-sm font-semibold">
+                  Média {formatarMedia(servico.media_avaliacoes)} de 5
+                </p>
+
+                <p className="text-sm text-muted-foreground">
+                  {servico.total_avaliacoes} avaliaç
+                  {servico.total_avaliacoes === 1 ? "ão" : "ões"}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 

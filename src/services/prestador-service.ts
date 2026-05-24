@@ -26,6 +26,21 @@ export type AvaliacaoPrestadorData = {
   cliente_id: number | null
 }
 
+export type MediaServicoPrestadorData = {
+  servico_id: number
+  servico_nome: string
+  total_avaliacoes: number
+  media_avaliacoes: number
+}
+
+export type ServicoPrestadorPerfilData = {
+  id: number
+  servico_id: number
+  user_id: number
+  servico_nome: string
+  valor_medio: number | null
+}
+
 type PrestadorRow = {
   id: number
   nome: string | null
@@ -92,6 +107,30 @@ type AvaliacaoRow = {
         cliente_id: number | null
       }[]
     | null
+}
+
+type ServicoPrestadorPerfilRow = {
+  id: number
+  servico_id: number | null
+  user_id: number | null
+  valor_medio: number | null
+  servico:
+    | {
+        nome: string | null
+      }
+    | {
+        nome: string | null
+      }[]
+    | null
+}
+
+type AvaliacaoMediaServicoRow = {
+  servico_id: number | null
+  nota: number | null
+}
+
+function getRelacaoUnica<T>(relacao: T | T[] | null | undefined) {
+  return Array.isArray(relacao) ? relacao[0] : relacao
 }
 
 export async function getPrestadorDetalhe(
@@ -191,13 +230,9 @@ export async function getAvaliacoesPorPrestador(
   const avaliacoes = (data ?? []) as unknown as AvaliacaoRow[]
 
   return avaliacoes.map((avaliacao) => {
-    const servico = Array.isArray(avaliacao.servico)
-      ? avaliacao.servico[0]
-      : avaliacao.servico
+    const servico = getRelacaoUnica(avaliacao.servico)
 
-    const servicoSolicitado = Array.isArray(avaliacao.servico_solicitado)
-      ? avaliacao.servico_solicitado[0]
-      : avaliacao.servico_solicitado
+    const servicoSolicitado = getRelacaoUnica(avaliacao.servico_solicitado)
 
     return {
       id: avaliacao.id,
@@ -210,6 +245,102 @@ export async function getAvaliacoesPorPrestador(
       servico_nome: servico?.nome ?? null,
       servico_solicitado_id: avaliacao.servico_solicitado_id,
       cliente_id: servicoSolicitado?.cliente_id ?? null,
+    }
+  })
+}
+
+export async function getServicosDoPrestador(
+  prestadorId: number
+): Promise<ServicoPrestadorPerfilData[]> {
+  const supabase = createClient()
+
+  const { data, error } = await supabase
+    .from("servico_prestador")
+    .select(`
+      id,
+      servico_id,
+      user_id,
+      valor_medio,
+      servico:servico_id (
+        nome
+      )
+    `)
+    .eq("user_id", prestadorId)
+    .order("id", { ascending: true })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const servicos = (data ?? []) as unknown as ServicoPrestadorPerfilRow[]
+
+  return servicos
+    .map((item) => {
+      const servico = getRelacaoUnica(item.servico)
+
+      return {
+        id: item.id,
+        servico_id: item.servico_id,
+        user_id: item.user_id,
+        valor_medio:
+          item.valor_medio !== null ? Number(item.valor_medio) : null,
+        servico_nome: servico?.nome ?? "Serviço sem nome",
+      }
+    })
+    .filter(
+      (item): item is ServicoPrestadorPerfilData =>
+        item.servico_id !== null && item.user_id !== null
+    )
+}
+
+export async function getMediasAvaliacoesServicosDoPrestador(
+  prestadorId: number
+): Promise<MediaServicoPrestadorData[]> {
+  const supabase = createClient()
+
+  const servicosAtivos = await getServicosDoPrestador(prestadorId)
+
+  if (servicosAtivos.length === 0) {
+    return []
+  }
+
+  const servicosIds = servicosAtivos.map((item) => item.servico_id)
+
+  const { data: avaliacoesData, error: avaliacoesError } = await supabase
+    .from("avaliacao")
+    .select("servico_id, nota")
+    .eq("user_id", prestadorId)
+    .in("servico_id", servicosIds)
+
+  if (avaliacoesError) {
+    throw new Error(avaliacoesError.message)
+  }
+
+  const avaliacoes = (avaliacoesData ??
+    []) as unknown as AvaliacaoMediaServicoRow[]
+
+  return servicosAtivos.map((servico) => {
+    const avaliacoesDoServico = avaliacoes.filter(
+      (avaliacao) =>
+        avaliacao.servico_id === servico.servico_id &&
+        avaliacao.nota !== null
+    )
+
+    const totalAvaliacoes = avaliacoesDoServico.length
+
+    const mediaAvaliacoes =
+      totalAvaliacoes > 0
+        ? avaliacoesDoServico.reduce(
+            (total, avaliacao) => total + Number(avaliacao.nota ?? 0),
+            0
+          ) / totalAvaliacoes
+        : 0
+
+    return {
+      servico_id: servico.servico_id,
+      servico_nome: servico.servico_nome,
+      total_avaliacoes: totalAvaliacoes,
+      media_avaliacoes: mediaAvaliacoes,
     }
   })
 }
